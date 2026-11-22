@@ -37,6 +37,9 @@ public struct Theme {
         #endif
     }()
 
+    /// Underline colors of lint diagnostics in diagram blocks.
+    public var diagnosticColors: [DiagnosticSeverity: PlatformColor] = [.error: .systemRed, .warning: .systemOrange, .info: .systemBlue]
+
     public init(font: PlatformFont, codeFont: PlatformFont, textColor: PlatformColor, secondaryColor: PlatformColor,
                 linkColor: PlatformColor, codeBackground: PlatformColor, selectedCellBackground: PlatformColor) {
         self.font = font; self.codeFont = codeFont; self.textColor = textColor; self.secondaryColor = secondaryColor

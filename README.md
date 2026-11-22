@@ -22,8 +22,13 @@ that Milkdown uses and adds a native TextKit view. It does not use a web view.
   - `ButtermilkEditor` wraps it for SwiftUI.
   - Decorations: inline, node and widget decorations in a `DecorationSet`, supplied by the
     `decorations` plugin prop, as in `prosemirror-view`. Widget text belongs to no position.
-  - Node views: `core.nodeViews` maps a leaf node type to a host-supplied `NodeView`. Its view
+  - Node views: `core.nodeViews` maps a node type to a host-supplied `NodeView`. Its view
     sits over an attachment character, so it can take focus and handle its own input.
+    `core.nodeViewFilter` limits which nodes get one. An `EditableNodeView` can take the cursor
+    from arrow keys and hand it back.
+  - Diagram blocks: `DiagramBlocks(languages:completer:linter:).install(on: core)` edits code
+    blocks in a diagram language in an embedded, highlighted code editor (`DiagramEditor`), with
+    host-provided completions and lint diagnostics shown as underlines.
   - `DocumentRenderer` turns a document into attributed text. It knows the basic, list and table
     schemas and the node names Milkdown uses.
 

@@ -8,7 +8,7 @@ import UIKit
 public typealias PlatformView = UIView
 #endif
 
-/// A host-supplied view for a leaf node, as in `prosemirror-view`.
+/// A host-supplied view for a node, as in `prosemirror-view`.
 ///
 /// The node renders as one attachment character that reserves ``size``. The editor view adds
 /// ``view`` as a subview over that character, so the view can take focus and handle its own
@@ -36,6 +36,14 @@ public extension NodeView {
     func selectNode() {}
     func deselectNode() {}
     func destroy() {}
+}
+
+/// A node view with its own cursor, such as an embedded code editor. An arrow key at the edge of
+/// a neighbouring textblock selects the node and calls ``focus(atEnd:)``. To hand the cursor
+/// back, the view calls ``EditorCore/leaveNodeView(at:dir:)`` and gives focus to the editor view.
+public protocol EditableNodeView: NodeView {
+    /// Takes focus, with the cursor at the start of the content, or at the end when `atEnd`.
+    func focus(atEnd: Bool)
 }
 
 /// Makes a node view. `getPos` returns the node's current position, or nil once the node view

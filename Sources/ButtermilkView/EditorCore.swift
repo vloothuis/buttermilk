@@ -33,10 +33,17 @@ public final class EditorCore {
     /// The decorations shown: those of the ``EditorProps/decorations`` props of all plugins.
     public private(set) var decorations: DecorationSet = .empty
 
-    /// Node views by node type name, as in `prosemirror-view`. Only leaf nodes (atoms such as
-    /// images or horizontal rules) can have one. Setting this renders the document again.
+    /// Node views by node type name, as in `prosemirror-view`. Leaf nodes (images, rules) and
+    /// top-level or nested blocks can have one; a block with a node view renders as a single
+    /// attachment, so its content is edited only through the node view. Setting this renders the
+    /// document again.
     public var nodeViews: [String: NodeViewConstructor] = [:] {
         didSet { renderer.nodeViewTypes = Set(nodeViews.keys) }
+    }
+    /// Picks which nodes of a ``nodeViews`` type get a node view, for example only code blocks
+    /// in a diagram language. Nil means all. Setting this renders the document again.
+    public var nodeViewFilter: ((Node) -> Bool)? {
+        didSet { renderer.nodeViewFilter = nodeViewFilter }
     }
     let nodeViewManager = NodeViewManager()
 
@@ -134,7 +141,45 @@ public final class EditorCore {
         guard let host else { return false }
         for handler in someProp({ $0.handleKeyDown }) where handler(host, key) { return true }
         guard editable else { return false }
+        if key.modifiers.isEmpty, enterNodeView(key.key) { return true }
         return Self.baseHandler(host, key)
+    }
+
+    /// Moves the cursor into an ``EditableNodeView`` next to the cursor's textblock when an
+    /// arrow key leaves the textblock towards it.
+    func enterNodeView(_ key: String) -> Bool {
+        let dirs: [String: TextDirection] = ["ArrowUp": .up, "ArrowDown": .down, "ArrowLeft": .left, "ArrowRight": .right]
+        guard let dir = dirs[key], let sel = state.selection as? TextSelection, sel.isEmpty else { return false }
+        let head = sel.resolvedHead
+        guard head.parent.isTextblock, head.depth > 0 else { return false }
+        let forward = dir == .down || dir == .right
+        let atEnd = host?.endOfTextblock(dir, state)
+            ?? (forward ? head.parentOffset == head.parent.content.size : head.parentOffset == 0)
+        guard atEnd else { return false }
+        let doc = state.doc
+        let pos: Int, node: Node?
+        if forward {
+            pos = head.after(); node = doc.resolve(pos).nodeAfter
+        } else {
+            let before = doc.resolve(head.before())
+            node = before.nodeBefore; pos = head.before() - (node?.nodeSize ?? 0)
+        }
+        guard let node, let entry = nodeViewManager.entries.first(where: { map in
+            rendered.map.position(for: map.offset) == pos && map.node === node }),
+              let editable = entry.nodeView as? EditableNodeView else { return false }
+        dispatch(state.tr.setSelection(NodeSelection.create(doc, pos)))
+        editable.focus(atEnd: !forward)
+        return true
+    }
+
+    /// Moves the cursor out of the node view at `pos` to the nearest text before it
+    /// (`dir` -1) or after it (`dir` 1), as an ``EditableNodeView`` does at its edges.
+    public func leaveNodeView(at pos: Int, dir: Int) {
+        let doc = state.doc
+        guard let node = doc.nodeAt(pos) else { return }
+        let target = doc.resolve(dir < 0 ? pos : pos + node.nodeSize)
+        let selection = Selection.findFrom(target, dir, textOnly: true) ?? Selection.near(target, bias: dir)
+        dispatch(state.tr.setSelection(selection).scrollIntoView())
     }
 
     private static let baseHandler = Keymap.handler(Commands.baseKeymap)

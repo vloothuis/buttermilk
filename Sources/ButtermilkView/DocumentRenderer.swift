@@ -85,6 +85,9 @@ public struct DocumentRenderer {
     /// Leaf node types that render as a ``NodeViewAttachment``, for the view to cover with a
     /// host-supplied ``NodeView``. ``EditorCore/nodeViews`` sets it.
     public var nodeViewTypes: Set<String> = []
+    /// Picks which nodes of ``nodeViewTypes`` get a node view; nil means all.
+    /// ``EditorCore/nodeViewFilter`` sets it.
+    public var nodeViewFilter: ((Node) -> Bool)?
     /// Colors the text of code blocks by their `language` attribute. Set it to nil to turn
     /// highlighting off, or to a ``LanguageHighlighters`` to supply highlighters per language.
     /// Only blocks that are rendered again (because they or their decorations changed) are
@@ -167,6 +170,7 @@ public struct DocumentRenderer {
     func renderBlock(_ node: Node, _ decorations: [Decoration] = []) -> RenderedBlock {
         let state = RenderState(theme: theme, imageLoader: imageLoader, linkSchemes: linkSchemes)
         state.nodeViewTypes = nodeViewTypes
+        state.nodeViewFilter = nodeViewFilter
         state.highlighter = highlighter
         state.widgets = decorations.filter(\.isWidget).enumerated()
             .sorted { ($0.element.from, $0.element.side, $0.offset) < ($1.element.from, $1.element.side, $1.offset) }
@@ -187,7 +191,12 @@ private final class RenderState {
     /// Widget decorations of the block, sorted by position and side.
     var widgets: [Decoration] = []
     var nodeViewTypes: Set<String> = []
+    var nodeViewFilter: ((Node) -> Bool)?
     var highlighter: SyntaxHighlighter?
+
+    func hasNodeView(_ node: Node) -> Bool {
+        nodeViewTypes.contains(node.type.name) && nodeViewFilter?(node) ?? true
+    }
 
     init(theme: Theme, imageLoader: ((String) -> PlatformImage?)?, linkSchemes: Set<String>) {
         self.theme = theme; self.imageLoader = imageLoader; self.linkSchemes = linkSchemes
@@ -207,6 +216,11 @@ private final class RenderState {
     func block(_ node: Node, _ pos: Int, _ ctx: DocumentRenderer.Context) {
         var ctx = ctx
         let name = node.type.name
+        if !node.isLeaf, hasNodeView(node) {
+            // A block with a node view renders as one attachment, like a leaf block.
+            leafBlock(node, pos, ctx)
+            return
+        }
         if node.isTextblock {
             if name == "heading" { ctx.heading = node.attrs["level"]?.intValue ?? 1 }
             if node.type.spec.code { ctx.code = true }
@@ -421,7 +435,7 @@ private final class RenderState {
     // MARK: Leaves
 
     func attachment(for node: Node, _ attrs: [NSAttributedString.Key: Any]) -> NSAttributedString {
-        if nodeViewTypes.contains(node.type.name) {
+        if hasNodeView(node) {
             var a = attrs
             a[.attachment] = NodeViewAttachment(node)
             return NSAttributedString(string: "\u{FFFC}", attributes: a)
@@ -445,7 +459,7 @@ private final class RenderState {
 
     func leafBlock(_ node: Node, _ pos: Int, _ ctx: DocumentRenderer.Context) {
         let base = baseAttributes(ctx)
-        let attachment = nodeViewTypes.contains(node.type.name) ? NodeViewAttachment(node) : NSTextAttachment()
+        let attachment = hasNodeView(node) ? NodeViewAttachment(node) : NSTextAttachment()
         if attachment is NodeViewAttachment {
             // The node view sets the size.
         } else if node.type.name == "image", let src = node.attrs["src"]?.stringValue, let image = imageLoader?(src) {
