@@ -68,7 +68,7 @@ enum Demo {
             "Tab": ListCommands.sinkListItem(item),
             "Shift-Tab": ListCommands.liftListItem(item),
         ]
-        return [InputRules.plugin(rules), History.plugin(), Keymap.plugin(keys),
+        return [InputRules.plugin(rules), History.plugin(), Keymap.plugin(keys), KillRing.plugin(), Keymap.plugin(KillRing.keymap),
                 Tables.editing(), GapCursor.plugin()]
     }
 }

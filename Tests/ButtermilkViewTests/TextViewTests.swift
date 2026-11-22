@@ -51,6 +51,23 @@ final class TextViewTests: XCTestCase {
         XCTAssertEqual(view.state.doc.textContent, "b")
     }
 
+    func testCtrlKKillsAndYankRestores() throws {
+        let view = try makeView(doc(para("ab cd"), para("ef")), cursor: 3, plugins: [KillRing.plugin()])
+        view.doCommand(by: #selector(NSResponder.deleteToEndOfParagraph(_:)))
+        XCTAssertEqual(view.string, "ab\nef\n")
+        view.doCommand(by: #selector(NSResponder.deleteToEndOfParagraph(_:)))
+        XCTAssertEqual(view.string, "abef\n", "at the end, Ctrl-K joins the next paragraph")
+        view.doCommand(by: #selector(NSResponder.yank(_:)))
+        XCTAssertEqual(view.string, "ab cd\nef\n")
+        XCTAssertEqual(view.state.doc.childCount, 2)
+    }
+
+    func testCtrlKWithoutKillRingStillDeletes() throws {
+        let view = try makeView(doc(para("ab cd")), cursor: 3)
+        view.doCommand(by: #selector(NSResponder.deleteToEndOfParagraph(_:)))
+        XCTAssertEqual(view.string, "ab\n")
+    }
+
     func testDeletesWholeGraphemes() throws {
         let view = try makeView(doc(para("a👍🏽")), cursor: 1 + ("a👍🏽" as NSString).length)
         view.doCommand(by: #selector(NSResponder.deleteBackward(_:)))

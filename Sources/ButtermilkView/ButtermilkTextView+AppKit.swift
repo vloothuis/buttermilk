@@ -411,8 +411,13 @@ open class ButtermilkTextView: NSTextView, EditorViewing {
         case #selector(deleteWordForward(_:)): deleteExtending(#selector(moveWordForwardAndModifySelection(_:)))
         case #selector(deleteToBeginningOfLine(_:)), #selector(deleteToBeginningOfParagraph(_:)):
             deleteExtending(#selector(moveToBeginningOfLineAndModifySelection(_:)))
-        case #selector(deleteToEndOfLine(_:)), #selector(deleteToEndOfParagraph(_:)):
+        case #selector(deleteToEndOfLine(_:)):
             deleteExtending(#selector(moveToEndOfLineAndModifySelection(_:)))
+        case #selector(deleteToEndOfParagraph(_:)):
+            // Ctrl-K: kill to the end of the paragraph, or the paragraph break at its end.
+            if !core.run(KillRing.killToEndOfTextblock) { deleteExtending(#selector(moveToEndOfLineAndModifySelection(_:))) }
+        case #selector(yank(_:)):
+            core.run(KillRing.yank)
         case #selector(cancelOperation(_:)):
             _ = core.handleKey(KeyPress("Escape"))
         default:
