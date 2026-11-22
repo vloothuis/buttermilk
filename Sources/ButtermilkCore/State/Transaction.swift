@@ -5,7 +5,20 @@ import Foundation
 public protocol EditorViewing: AnyObject {
     var state: EditorState { get }
     func dispatch(_ tr: Transaction)
+    /// True while an input method composition is in progress.
+    var composing: Bool { get }
+    /// Whether the cursor is at the end of its textblock in the given direction, taking visual
+    /// line layout into account. Return nil to fall back to offset checks.
+    func endOfTextblock(_ dir: TextDirection, _ state: EditorState) -> Bool?
 }
+
+public extension EditorViewing {
+    var composing: Bool { false }
+    func endOfTextblock(_ dir: TextDirection, _ state: EditorState) -> Bool? { nil }
+}
+
+/// Direction used by ``EditorViewing/endOfTextblock(_:_:)``.
+public enum TextDirection { case backward, forward, up, down, left, right }
 
 /// A command. It returns false when it does not apply. When `dispatch` is given and the command
 /// applies, it calls `dispatch` with a transaction.

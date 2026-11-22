@@ -1,12 +1,3 @@
-/// Direction used by ``EditorViewing/endOfTextblock(_:_:)``.
-public enum TextDirection { case backward, forward, up, down, left, right }
-
-public extension EditorViewing {
-    /// Whether the cursor is at the end of its textblock in the given direction, taking visual
-    /// line layout into account. Return nil to fall back to offset checks.
-    func endOfTextblock(_ dir: TextDirection, _ state: EditorState) -> Bool? { nil }
-}
-
 /// Run a transaction builder. A failure means the command does not apply.
 private func build(_ f: () throws -> Void) -> Bool {
     do { try f(); return true } catch { return false }

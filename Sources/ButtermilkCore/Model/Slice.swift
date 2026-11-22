@@ -75,6 +75,7 @@ private func removeRange(_ content: Fragment, _ from: Int, _ to: Int) throws -> 
 
 private func insertInto(_ content: Fragment, _ dist: Int, _ insert: Fragment, _ openStart: Int, _ openEnd: Int,
                         _ parent: Node?) -> Fragment? {
+    guard dist >= 0, dist <= content.size else { return nil }
     let (index, offset) = content.findIndex(dist)
     let child = content.maybeChild(index)
     if offset == dist || child!.isText {

@@ -13,10 +13,11 @@ public struct KeyPress: Equatable {
     }
     public var key: String
     public var modifiers: Modifiers
-    /// The key code from the platform event, if known. Used as a fallback for non-Latin layouts.
-    public var keyCode: Int?
-    public init(_ key: String, modifiers: Modifiers = [], keyCode: Int? = nil) {
-        self.key = key; self.modifiers = modifiers; self.keyCode = keyCode
+    /// The key as it would be on a US layout, if known (for example from the hardware key code).
+    /// Keymaps fall back to it so that shortcuts keep working on non-Latin layouts.
+    public var baseKey: String?
+    public init(_ key: String, modifiers: Modifiers = [], baseKey: String? = nil) {
+        self.key = key; self.modifiers = modifiers; self.baseKey = baseKey
     }
 }
 
