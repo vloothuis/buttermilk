@@ -125,7 +125,21 @@ open class ButtermilkTextView: NSTextView, EditorViewing {
             if sel is NodeSelection, to <= from { range.length = min(1, length - from) }
             super.setSelectedRanges([NSValue(range: range)], affinity: .downstream, stillSelecting: false)
         }
-        if core.scrollRequested { scrollRangeToVisible(selectedRange()) }
+        if core.scrollRequested { scrollSelectionToVisible() }
+    }
+
+    /// Scrolls to the selection head. Unlike `scrollRangeToVisible`, this only lays out the
+    /// text around the selection, which matters for long documents.
+    private func scrollSelectionToVisible() {
+        guard enclosingScrollView != nil, let layoutManager, let textContainer else { return }
+        let length = (string as NSString).length
+        let offset = min(core.rendered.map.offset(for: state.selection.head), length)
+        let glyphs = layoutManager.glyphRange(forCharacterRange: NSRange(location: offset, length: 0), actualCharacterRange: nil)
+        var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+        rect.origin.x += textContainerOrigin.x
+        rect.origin.y += textContainerOrigin.y
+        rect.size.width = max(rect.width, 1)
+        scrollToVisible(rect.insetBy(dx: 0, dy: -8))
     }
 
     // MARK: Selection from TextKit

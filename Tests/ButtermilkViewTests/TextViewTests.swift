@@ -233,6 +233,8 @@ final class IncrementalRenderTests: XCTestCase {
 
     func testTypingInLargeDocumentIsFast() throws {
         let view = ButtermilkTextView(state: try EditorState.create(.init(doc: try bigDoc(20_000))))
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 480, height: 400))
+        scroll.documentView = view
         view.core.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(view.state.doc.content.size / 2))))
         let start = Date()
         for _ in 0..<100 { view.insertText("a", replacementRange: NSRange(location: NSNotFound, length: 0)) }

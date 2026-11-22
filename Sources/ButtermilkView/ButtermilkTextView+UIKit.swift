@@ -105,7 +105,15 @@ open class ButtermilkTextView: UITextView, EditorViewing, UITextViewDelegate {
         var range = NSRange(location: from, length: max(to - from, 0))
         if sel is NodeSelection, to <= from { range.length = min(1, length - from) }
         selectedRange = range
-        if core.scrollRequested { scrollRangeToVisible(range) }
+        if core.scrollRequested {
+            // Only lay out around the selection, not the text before it.
+            let glyphs = layoutManager.glyphRange(forCharacterRange: NSRange(location: range.location, length: 0), actualCharacterRange: nil)
+            var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+            rect.origin.x += textContainerInset.left
+            rect.origin.y += textContainerInset.top
+            rect.size.width = max(rect.width, 1)
+            scrollRectToVisible(rect.insetBy(dx: 0, dy: -8), animated: false)
+        }
     }
 
     // MARK: Delegate
