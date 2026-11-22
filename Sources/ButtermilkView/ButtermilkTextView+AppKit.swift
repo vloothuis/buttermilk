@@ -94,6 +94,7 @@ open class ButtermilkTextView: NSTextView, EditorViewing {
         storage.beginEditing()
         storage.replaceCharacters(in: change.range, with: change.replacement)
         storage.endEditing()
+        syncNodeViews()
     }
 
     private func renderDocument() {
@@ -103,6 +104,7 @@ open class ButtermilkTextView: NSTextView, EditorViewing {
         storage.beginEditing()
         storage.setAttributedString(core.rendered.text)
         storage.endEditing()
+        syncNodeViews()
         typingAttributes = [.font: core.renderer.theme.font, .foregroundColor: core.renderer.theme.textColor]
     }
 
@@ -125,7 +127,53 @@ open class ButtermilkTextView: NSTextView, EditorViewing {
             if sel is NodeSelection, to <= from { range.length = min(1, length - from) }
             super.setSelectedRanges([NSValue(range: range)], affinity: .downstream, stillSelecting: false)
         }
+        core.nodeViewManager.updateSelection(sel, map)
         if core.scrollRequested { scrollSelectionToVisible() }
+    }
+
+    // MARK: Node views
+
+    /// The node views shown, in document order.
+    public var nodeViews: [NodeView] { core.nodeViewManager.entries.map(\.nodeView) }
+
+    private func syncNodeViews() {
+        guard let storage = textStorage else { return }
+        for entry in core.syncNodeViews(storage) {
+            layoutManager?.invalidateLayout(forCharacterRange: NSRange(location: entry.offset, length: 1), actualCharacterRange: nil)
+            if entry.nodeView.view.superview !== self { addSubview(entry.nodeView.view) }
+        }
+        layoutNodeViews()
+    }
+
+    /// Call when a node view's ``NodeView/size`` changed, to make room for it.
+    public func nodeViewSizeChanged(_ nodeView: NodeView) {
+        guard let entry = core.nodeViewManager.entries.first(where: { $0.nodeView === nodeView }) else { return }
+        entry.attachment.bounds = CGRect(origin: .zero, size: nodeView.size)
+        layoutManager?.invalidateLayout(forCharacterRange: NSRange(location: entry.offset, length: 1), actualCharacterRange: nil)
+        layoutNodeViews()
+    }
+
+    /// Moves each node view over its attachment character.
+    public func layoutNodeViews() {
+        let entries = core.nodeViewManager.entries
+        guard !entries.isEmpty, let layoutManager else { return }
+        let origin = textContainerOrigin
+        for entry in entries {
+            let glyphs = layoutManager.glyphRange(forCharacterRange: NSRange(location: entry.offset, length: 1), actualCharacterRange: nil)
+            guard glyphs.length > 0 else { continue }
+            layoutManager.ensureLayout(forGlyphRange: glyphs)
+            let line = layoutManager.lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil)
+            let location = layoutManager.location(forGlyphAt: glyphs.location)
+            let bounds = entry.attachment.bounds
+            entry.nodeView.view.frame = CGRect(x: origin.x + line.minX + location.x,
+                                               y: origin.y + line.minY + location.y - bounds.maxY,
+                                               width: bounds.width, height: bounds.height)
+        }
+    }
+
+    override open func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        layoutNodeViews()
     }
 
     /// Scrolls to the selection head. Unlike `scrollRangeToVisible`, this only lays out the

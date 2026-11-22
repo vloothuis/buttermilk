@@ -84,6 +84,7 @@ open class ButtermilkTextView: UITextView, EditorViewing, UITextViewDelegate {
         textStorage.beginEditing()
         textStorage.replaceCharacters(in: change.range, with: change.replacement)
         textStorage.endEditing()
+        syncNodeViews()
     }
 
     private func renderDocument() {
@@ -92,6 +93,7 @@ open class ButtermilkTextView: UITextView, EditorViewing, UITextViewDelegate {
         textStorage.beginEditing()
         textStorage.setAttributedString(core.rendered.text)
         textStorage.endEditing()
+        syncNodeViews()
         typingAttributes = [.font: core.renderer.theme.font, .foregroundColor: core.renderer.theme.textColor]
     }
 
@@ -105,6 +107,7 @@ open class ButtermilkTextView: UITextView, EditorViewing, UITextViewDelegate {
         var range = NSRange(location: from, length: max(to - from, 0))
         if sel is NodeSelection, to <= from { range.length = min(1, length - from) }
         selectedRange = range
+        core.nodeViewManager.updateSelection(sel, map)
         if core.scrollRequested {
             // Only lay out around the selection, not the text before it.
             let glyphs = layoutManager.glyphRange(forCharacterRange: NSRange(location: range.location, length: 0), actualCharacterRange: nil)
@@ -114,6 +117,49 @@ open class ButtermilkTextView: UITextView, EditorViewing, UITextViewDelegate {
             rect.size.width = max(rect.width, 1)
             scrollRectToVisible(rect.insetBy(dx: 0, dy: -8), animated: false)
         }
+    }
+
+    // MARK: Node views
+
+    /// The node views shown, in document order.
+    public var nodeViews: [NodeView] { core.nodeViewManager.entries.map(\.nodeView) }
+
+    private func syncNodeViews() {
+        for entry in core.syncNodeViews(textStorage) {
+            layoutManager.invalidateLayout(forCharacterRange: NSRange(location: entry.offset, length: 1), actualCharacterRange: nil)
+            if entry.nodeView.view.superview !== self { addSubview(entry.nodeView.view) }
+        }
+        layoutNodeViews()
+    }
+
+    /// Call when a node view's ``NodeView/size`` changed, to make room for it.
+    public func nodeViewSizeChanged(_ nodeView: NodeView) {
+        guard let entry = core.nodeViewManager.entries.first(where: { $0.nodeView === nodeView }) else { return }
+        entry.attachment.bounds = CGRect(origin: .zero, size: nodeView.size)
+        layoutManager.invalidateLayout(forCharacterRange: NSRange(location: entry.offset, length: 1), actualCharacterRange: nil)
+        layoutNodeViews()
+    }
+
+    /// Moves each node view over its attachment character.
+    public func layoutNodeViews() {
+        let entries = core.nodeViewManager.entries
+        guard !entries.isEmpty else { return }
+        for entry in entries {
+            let glyphs = layoutManager.glyphRange(forCharacterRange: NSRange(location: entry.offset, length: 1), actualCharacterRange: nil)
+            guard glyphs.length > 0 else { continue }
+            layoutManager.ensureLayout(forGlyphRange: glyphs)
+            let line = layoutManager.lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil)
+            let location = layoutManager.location(forGlyphAt: glyphs.location)
+            let bounds = entry.attachment.bounds
+            entry.nodeView.view.frame = CGRect(x: textContainerInset.left + line.minX + location.x,
+                                               y: textContainerInset.top + line.minY + location.y - bounds.maxY,
+                                               width: bounds.width, height: bounds.height)
+        }
+    }
+
+    override open func layoutSubviews() {
+        super.layoutSubviews()
+        layoutNodeViews()
     }
 
     // MARK: Delegate

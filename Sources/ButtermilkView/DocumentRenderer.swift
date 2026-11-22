@@ -82,6 +82,9 @@ public struct DocumentRenderer {
     public var imageLoader: ((String) -> PlatformImage?)?
     /// URL schemes a link mark may open. Other links render styled but inactive.
     public var linkSchemes: Set<String> = ["http", "https", "mailto"]
+    /// Leaf node types that render as a ``NodeViewAttachment``, for the view to cover with a
+    /// host-supplied ``NodeView``. ``EditorCore/nodeViews`` sets it.
+    public var nodeViewTypes: Set<String> = []
 
     public init(theme: Theme = .standard, imageLoader: ((String) -> PlatformImage?)? = nil) {
         self.theme = theme; self.imageLoader = imageLoader
@@ -158,6 +161,7 @@ public struct DocumentRenderer {
 
     func renderBlock(_ node: Node, _ decorations: [Decoration] = []) -> RenderedBlock {
         let state = RenderState(theme: theme, imageLoader: imageLoader, linkSchemes: linkSchemes)
+        state.nodeViewTypes = nodeViewTypes
         state.widgets = decorations.filter(\.isWidget).enumerated()
             .sorted { ($0.element.from, $0.element.side, $0.offset) < ($1.element.from, $1.element.side, $1.offset) }
             .map(\.element)
@@ -176,6 +180,7 @@ private final class RenderState {
     let linkSchemes: Set<String>
     /// Widget decorations of the block, sorted by position and side.
     var widgets: [Decoration] = []
+    var nodeViewTypes: Set<String> = []
 
     init(theme: Theme, imageLoader: ((String) -> PlatformImage?)?, linkSchemes: Set<String>) {
         self.theme = theme; self.imageLoader = imageLoader; self.linkSchemes = linkSchemes
@@ -394,6 +399,11 @@ private final class RenderState {
     // MARK: Leaves
 
     func attachment(for node: Node, _ attrs: [NSAttributedString.Key: Any]) -> NSAttributedString {
+        if nodeViewTypes.contains(node.type.name) {
+            var a = attrs
+            a[.attachment] = NodeViewAttachment(node)
+            return NSAttributedString(string: "\u{FFFC}", attributes: a)
+        }
         let attachment = NSTextAttachment()
         let font = attrs[.font] as? PlatformFont ?? theme.font
         if node.type.name == "image", let src = node.attrs["src"]?.stringValue, let image = imageLoader?(src) {
@@ -413,8 +423,10 @@ private final class RenderState {
 
     func leafBlock(_ node: Node, _ pos: Int, _ ctx: DocumentRenderer.Context) {
         let base = baseAttributes(ctx)
-        let attachment = NSTextAttachment()
-        if node.type.name == "image", let src = node.attrs["src"]?.stringValue, let image = imageLoader?(src) {
+        let attachment = nodeViewTypes.contains(node.type.name) ? NodeViewAttachment(node) : NSTextAttachment()
+        if attachment is NodeViewAttachment {
+            // The node view sets the size.
+        } else if node.type.name == "image", let src = node.attrs["src"]?.stringValue, let image = imageLoader?(src) {
             attachment.image = image
             attachment.bounds = CGRect(origin: .zero, size: image.size)
         } else {

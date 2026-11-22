@@ -33,6 +33,16 @@ public final class EditorCore {
     /// The decorations shown: those of the ``EditorProps/decorations`` props of all plugins.
     public private(set) var decorations: DecorationSet = .empty
 
+    /// Node views by node type name, as in `prosemirror-view`. Only leaf nodes (atoms such as
+    /// images or horizontal rules) can have one. Setting this renders the document again.
+    public var nodeViews: [String: NodeViewConstructor] = [:] {
+        didSet { renderer.nodeViewTypes = Set(nodeViews.keys) }
+    }
+    let nodeViewManager = NodeViewManager()
+
+    /// The current position of a node view's node, or nil when it is not shown.
+    public func position(of nodeView: NodeView) -> Int? { nodeViewManager.position(of: nodeView, in: rendered.map) }
+
     weak var host: EditorViewing?
     private var pluginViews: [PluginView] = []
 
@@ -51,7 +61,19 @@ public final class EditorCore {
         makePluginViews()
     }
 
-    deinit { pluginViews.forEach { $0.destroy() } }
+    deinit {
+        pluginViews.forEach { $0.destroy() }
+        nodeViewManager.destroyAll()
+    }
+
+    /// Brings node views in line with `text`, the text the host shows. Returns the attachments
+    /// that got a new size, so the host can lay them out again.
+    func syncNodeViews(_ text: NSAttributedString) -> [NodeViewManager.Entry] {
+        guard let host else { return [] }
+        let resized = nodeViewManager.sync(text, core: self, host: host, constructors: nodeViews)
+        nodeViewManager.updateSelection(state.selection, rendered.map)
+        return resized
+    }
 
     private func makePluginViews() {
         pluginViews.forEach { $0.destroy() }
