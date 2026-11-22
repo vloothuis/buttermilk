@@ -45,7 +45,9 @@ public struct Slice: Equatable, CustomStringConvertible {
         guard let os = openStart.intValue, let oe = openEnd.intValue else {
             throw ProseError.range("Invalid input for Slice.fromJSON")
         }
-        return Slice(try Fragment.fromJSON(schema, json["content"]), openStart: os, openEnd: oe)
+        let content = try Fragment.fromJSON(schema, json["content"])
+        try checkSliceContent(content, os, oe)
+        return Slice(content, openStart: os, openEnd: oe)
     }
 
     /// Create a slice from a fragment by taking the maximum possible open value on both sides.
@@ -184,4 +186,22 @@ private func prepareSliceForReplace(_ slice: Slice, _ along: ResolvedPos) -> (Re
     var i = extra - 1
     while i >= 0 { node = along.node(i).copy(Fragment(node)); i -= 1 }
     return (node.resolveNoCache(slice.openStart + extra), node.resolveNoCache(node.content.size - slice.openEnd - extra))
+}
+
+/// Check that the open depths of decoded slice content exist, so that untrusted JSON cannot
+/// make later code walk past the content. Closed nodes are not checked: valid slices can hold
+/// nodes with incomplete content, such as the empty wrapper in a ReplaceAroundStep.
+private func checkSliceContent(_ content: Fragment, _ openStart: Int, _ openEnd: Int) throws {
+    guard openStart >= 0, openEnd >= 0 else { throw ProseError.range("Invalid open depth in slice JSON") }
+    func walk(_ f: Fragment, _ os: Int, _ oe: Int) throws {
+        if (os > 0 || oe > 0) && f.childCount == 0 { throw ProseError.range("Slice open depth exceeds content") }
+        for i in 0..<f.childCount {
+            let child = f.child(i)
+            let cs = i == 0 ? os : 0, ce = i == f.childCount - 1 ? oe : 0
+            if cs == 0 && ce == 0 { continue }
+            if child.isLeaf { throw ProseError.range("Slice open depth exceeds content") }
+            try walk(child.content, max(cs - 1, 0), max(ce - 1, 0))
+        }
+    }
+    try walk(content, openStart, openEnd)
 }

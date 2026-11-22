@@ -203,11 +203,11 @@ public final class Node: CustomStringConvertible {
         return name
     }
 
+    /// The content match at the given child index. For a node with invalid content (possible
+    /// with unvalidated JSON input) this returns a match that accepts nothing, where
+    /// ProseMirror throws.
     public func contentMatchAt(_ index: Int) -> ContentMatch {
-        guard let match = type.contentMatch.matchFragment(content, start: 0, end: index) else {
-            preconditionFailure("Called contentMatchAt on a node with invalid content")
-        }
-        return match
+        type.contentMatch.matchFragment(content, start: 0, end: index) ?? ContentMatch.dead
     }
 
     public func canReplace(_ from: Int, _ to: Int, _ replacement: Fragment = .empty, start: Int = 0, end: Int? = nil) -> Bool {

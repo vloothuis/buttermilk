@@ -12,6 +12,8 @@ public final class ContentMatch: CustomStringConvertible {
     init(validEnd: Bool) { self.validEnd = validEnd }
 
     public static let empty = ContentMatch(validEnd: true)
+    /// A match that accepts nothing and is not a valid end.
+    static let dead = ContentMatch(validEnd: false)
 
     static func parse(_ string: String, nodeTypes: [NodeType], byName: [String: NodeType]) throws -> ContentMatch {
         let stream = TokenStream(string: string, nodeTypes: nodeTypes, byName: byName)

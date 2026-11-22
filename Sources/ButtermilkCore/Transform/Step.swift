@@ -148,6 +148,7 @@ public final class ReplaceAroundStep: Step {
         }
         let gap = doc.slice(gapFrom, gapTo)
         if gap.openStart > 0 || gap.openEnd > 0 { return .fail("Gap is not a flat range") }
+        guard insert >= 0, insert <= slice.content.size else { return .fail("Insert position out of range") }
         guard let inserted = slice.insertAt(insert, gap.content) else { return .fail("Content does not fit in gap") }
         return .fromReplace(doc, from, to, inserted)
     }
