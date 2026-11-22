@@ -1,0 +1,6 @@
+.build/
+.swiftpm/
+golden/node_modules/
+*.xcodeproj
+DerivedData/
+.DS_Store
