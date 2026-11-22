@@ -1,0 +1,54 @@
+{
+ "cases": [
+  {
+   "name": "blocks",
+   "input": "> A quote\n> over two lines.\n>\n> > Nested quote.\n\n```swift\nlet x = 1\nprint(x)\n```\n\n```\nno language\n```\n\n    indented code\n\n---\n\n***\n\nParagraph after rules.\n",
+   "milkdown": "> A quote\n> over two lines.\n>\n> > Nested quote.\n\n```swift\nlet x = 1\nprint(x)\n```\n\n```\nno language\n```\n\n```\nindented code\n```\n\n***\n\n***\n\nParagraph after rules.\n"
+  },
+  {
+   "name": "edge-cases",
+   "input": "Escapes at the start of a line:\n\n\\# not a heading\n\n\\> not a quote\n\n\\- not a bullet\n\n1\\. not a list\n\nAT&T, a \\* star, a\\_b, e\\_f and \\_word\\_.\n\nWow\\![a link](https://x.dev) and a [link with \"quotes\"](https://x.dev/a(b) \"Say \\\"hi\\\"\").\n\n<https://autolink.example/path> and [text](<url with spaces>).\n\n## Heading ending in \\#\n\n`` `backticks` `` and ``` `` ``` and `a | b`.\n\n````\n```\nnested fence\n```\n````\n\n1. one\n2. two\n\n<!-- -->\n\n1. again\n\n- [ ] task\n\n  with a second paragraph\n\n-\n\n> quote\n>\n> - list in quote\n>\n>   ```\n>   code in list in quote\n>   ```\n",
+   "milkdown": "Escapes at the start of a line:\n\n\\# not a heading\n\n\\> not a quote\n\n\\- not a bullet\n\n1\\. not a list\n\nAT\\&T, a \\* star, a_b, e_f and \\_word\\_.\n\nWow\\![a link](https://x.dev) and a [link with \"quotes\"](https://x.dev/a\\(b\\) \"Say \\\"hi\\\"\").\n\n<https://autolink.example/path> and [text](<url with spaces>).\n\n## Heading ending in \\#\n\n`` `backticks` `` and ` `` ` and `a | b`.\n\n````\n```\nnested fence\n```\n````\n\n1. one\n2. two\n\n<!-- -->\n\n1. again\n\n* [ ] task\n\n  with a second paragraph\n\n* <br />\n\n> quote\n>\n> * list in quote\n>\n>   ```\n>   code in list in quote\n>   ```\n"
+  },
+  {
+   "name": "escapes",
+   "input": "Characters that need escaping: \\* \\_ \\# \\[ \\] \\` \\\\ and 1\\. not a list.\n\nA literal * star and _ underscore in words like snake_case_name.\n\n+ plus bullet\n\nText with <span>inline html</span>.\n\n<div>\nblock html\n</div>\n\n&copy; entity and &amp; ampersand.\n",
+   "milkdown": "Characters that need escaping: \\* \\_ # \\[ ] \\` \\ and 1. not a list.\n\nA literal \\* star and \\_ underscore in words like snake_case_name.\n\n* plus bullet\n\nText with <span>inline html</span>.\n\n<div>\nblock html\n</div>\n\n© entity and & ampersand.\n"
+  },
+  {
+   "name": "frontmatter",
+   "input": "---\ntitle: Hello\ntags: [a, b]\n---\n\n# Document\n\nBody text.\n",
+   "milkdown": "***\n\ntitle: Hello\ntags: \\[a, b]\n-------------\n\n# Document\n\nBody text.\n"
+  },
+  {
+   "name": "headings",
+   "input": "# Heading 1\n\n## Heading 2 with *emphasis*\n\n### Heading 3\n\n#### Heading 4\n\n##### Heading 5\n\n###### Heading 6\n\nSetext heading\n==============\n\nAnother one\n-----------\n",
+   "milkdown": "# Heading 1\n\n## Heading 2 with *emphasis*\n\n### Heading 3\n\n#### Heading 4\n\n##### Heading 5\n\n###### Heading 6\n\n# Setext heading\n\n## Another one\n"
+  },
+  {
+   "name": "inline",
+   "input": "Plain text with *emphasis*, _underscore emphasis_, **strong**, __underscore strong__ and ***both***.\n\nSome `inline code`, a `` code with ` backtick `` and ~~strikethrough~~.\n\n**Strong with *nested em* inside** and *em with **strong** inside*.\n\nA [link](https://example.com), a [titled link](https://example.com \"Title\") and <https://autolink.example>.\n\nAn image: ![alt text](image.png \"Image title\") and ![](empty-alt.png).\n\nLine with a hard break  \nnext line, and a backslash break\\\nlast line.\n",
+   "milkdown": "Plain text with *emphasis*, _underscore emphasis_, **strong**, __underscore strong__ and ***both***.\n\nSome `inline code`, a ``code with ` backtick`` and ~~strikethrough~~.\n\n**Strong with *nested em* inside** and *em with **strong** inside*.\n\nA [link](https://example.com), a [titled link](https://example.com \"Title\") and <https://autolink.example>.\n\nAn image: ![alt text](image.png \"Image title\") and ![](empty-alt.png).\n\nLine with a hard break\\\nnext line, and a backslash break\\\nlast line.\n"
+  },
+  {
+   "name": "lists",
+   "input": "- one\n- two\n- three\n\n* star one\n* star two\n\n1. first\n2. second\n3. third\n\n5. five\n6. six\n\n- outer\n  - inner\n    - innermost\n  - inner two\n- outer two\n\n1. ordered outer\n   1. ordered inner\n   2. ordered inner two\n2. ordered outer two\n\n- loose item one\n\n- loose item two\n\n- item with paragraphs\n\n  second paragraph\n",
+   "milkdown": "* one\n* two\n* three\n\n- star one\n- star two\n\n1. first\n\n2. second\n\n3. third\n\n4. five\n\n5. six\n\n* outer\n  * inner\n    * innermost\n  * inner two\n* outer two\n\n1. ordered outer\n   1. ordered inner\n   2. ordered inner two\n2. ordered outer two\n\n* loose item one\n\n* loose item two\n\n* item with paragraphs\n\n  second paragraph\n"
+  },
+  {
+   "name": "mixed",
+   "input": "# Release notes\n\nVersion **1.2** adds:\n\n- Faster *parsing*\n- A `--quiet` flag\n  > quoted inside a list\n\n1. Install\n2. Run:\n\n   ```sh\n   make run\n   ```\n\nSee [the docs](https://example.com/docs).\n",
+   "milkdown": "# Release notes\n\nVersion **1.2** adds:\n\n* Faster *parsing*\n* A `--quiet` flag\n  > quoted inside a list\n\n1. Install\n2. Run:\n\n   ```sh\n   make run\n   ```\n\nSee [the docs](https://example.com/docs).\n"
+  },
+  {
+   "name": "tables",
+   "input": "| Left | Center | Right | None |\n|:-----|:------:|------:|------|\n| a    | b      | c     | d    |\n| *em* | `code` | **s** | [l](u) |\n\n| A |\n|---|\n| 1 |\n",
+   "milkdown": "| Left | Center | Right | None   |\n| :--- | :----: | ----: | ------ |\n| a    |    b   |     c | d      |\n| *em* | `code` | **s** | [l](u) |\n\n| A |\n| - |\n| 1 |\n"
+  },
+  {
+   "name": "tasks",
+   "input": "- [ ] todo\n- [x] done\n- plain\n\n1. [ ] ordered todo\n2. [x] ordered done\n",
+   "milkdown": "* [ ] todo\n* [x] done\n* plain\n\n1. [ ] ordered todo\n2. [x] ordered done\n"
+  }
+ ]
+}

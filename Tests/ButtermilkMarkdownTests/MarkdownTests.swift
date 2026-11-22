@@ -62,6 +62,8 @@ final class MarkdownTests: XCTestCase {
             "***both***\n",
             "![alt](img.png \"title\")\n",
             "|A|B|\n|-|-|\n|1|2|\n",
+            "1. a\n   3. nested\n   4. start\n",
+            "- loose\n\n- list\n",
         ]
         for sample in samples {
             let doc = try md.parse(sample)
@@ -83,7 +85,7 @@ final class MarkdownTests: XCTestCase {
     func testAdjacentListsStaySeparate() throws {
         let doc = try md.parse("- a\n\n<!-- -->\n\n- b\n")
         XCTAssertEqual((0..<doc.childCount).map { doc.child($0).type.name }, ["bullet_list", "bullet_list"])
-        XCTAssertEqual(md.serialize(doc), "- a\n\n<!-- -->\n\n- b\n")
+        XCTAssertEqual(md.serialize(doc), "* a\n\n- b\n")
     }
 
     func testEmptyDocument() throws {

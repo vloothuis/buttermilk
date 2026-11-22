@@ -31,7 +31,8 @@ that Milkdown uses and adds a native TextKit view. It does not use a web view.
   [swift-markdown](https://github.com/swiftlang/swift-markdown) (cmark-gfm).
   - `MarkdownSchema` covers CommonMark plus GitHub tables, strikethrough and task lists.
   - `MarkdownConverter` parses Markdown into a document and serializes a document back.
-  - Nested ordered lists are always written starting at 1, because of a formatter limit.
+  - The output follows Milkdown's remark serializer. The differences are listed in
+    [docs/markdown-round-trip.md](docs/markdown-round-trip.md).
 
 ## Usage
 
@@ -69,7 +70,9 @@ document.
 The tests compare Buttermilk with the JavaScript packages. Scripts in `golden/` run seeded random
 operations against ProseMirror and save the results as JSON fixtures. The Swift tests replay the
 same operations and compare the results. The fixtures cover the model, transforms, commands,
-selections, transactions, history, input rules, the gap cursor and tables.
+selections, transactions, history, input rules, the gap cursor and tables. `gen-markdown.mjs`
+runs the Markdown documents in `golden/markdown-corpus` through a headless Milkdown editor and saves
+its output, so the tests can compare Markdown round trips.
 
 To regenerate the fixtures:
 

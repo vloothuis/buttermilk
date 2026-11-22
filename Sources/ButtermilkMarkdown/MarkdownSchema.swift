@@ -15,8 +15,10 @@ public enum MarkdownSchema {
         nodes.insert(("front_matter", NodeSpec(content: "text*", marks: "", group: "block",
                                                code: true, defining: true)), at: 5)
         nodes = ListSchema.addListNodes(nodes, itemContent: "paragraph block*", listGroup: "block")
-        if let i = nodes.firstIndex(where: { $0.0 == "list_item" }) {
-            nodes[i].1.attrs["checked"] = AttributeSpec(default: .null, validateType: "boolean|null")
+        // `spread` marks loose lists and items, whose children are separated by blank lines.
+        for i in nodes.indices where ["bullet_list", "ordered_list", "list_item"].contains(nodes[i].0) {
+            nodes[i].1.attrs["spread"] = AttributeSpec(default: .bool(false), validateType: "boolean")
+            if nodes[i].0 == "list_item" { nodes[i].1.attrs["checked"] = AttributeSpec(default: .null, validateType: "boolean|null") }
         }
         return nodes + Tables.nodes(cellContent: "paragraph",
                                     cellAttributes: ["alignment": .init(default: .null)],

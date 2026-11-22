@@ -29,7 +29,7 @@ public struct MarkdownConverter {
             blocks.append(try node("front_matter", nil, yaml.isEmpty ? [] : [schema.text(yaml)]))
             body = rest
         }
-        let document = Document(parsing: body)
+        let document = Document(parsing: body, options: [.disableSmartOpts])
         blocks += try document.blockChildren.flatMap { try block($0) }
         if blocks.isEmpty, let paragraph = schema.nodes["paragraph"] { blocks = [try paragraph.create()] }
         return try schema.topNodeType.createChecked(nil, Fragment.fromArray(blocks))
@@ -68,9 +68,10 @@ public struct MarkdownConverter {
         case is ThematicBreak:
             return [try node("horizontal_rule")]
         case let list as UnorderedList:
-            return [try node("bullet_list", nil, list.listItems.map(listItem))]
+            return [try node("bullet_list", ["spread": .bool(Self.spread(Array(list.listItems)))], list.listItems.map(listItem))]
         case let list as OrderedList:
-            return [try node("ordered_list", ["order": Int(list.startIndex).json], list.listItems.map(listItem))]
+            return [try node("ordered_list", ["order": Int(list.startIndex).json, "spread": .bool(Self.spread(Array(list.listItems)))],
+                             list.listItems.map(listItem))]
         case let table as Markdown.Table:
             return [try self.table(table)]
         case let html as HTMLBlock:
@@ -94,9 +95,24 @@ public struct MarkdownConverter {
         var content = try item.children.flatMap { try block($0) }
         // List items start with a paragraph.
         if content.first?.type.name != "paragraph" { content.insert(try node("paragraph"), at: 0) }
-        var attrs: Attrs = [:]
+        var attrs: Attrs = ["spread": .bool(Self.spread(Array(item.children)))]
         if let box = item.checkbox { attrs["checked"] = .bool(box == .checked) }
         return try node("list_item", attrs, content)
+    }
+
+    /// Whether a blank line separates any two of `siblings`, as in a loose list.
+    static func spread(_ siblings: [Markup]) -> Bool {
+        zip(siblings, siblings.dropFirst()).contains { a, b in
+            guard let end = lastLine(a), let start = b.range?.lowerBound.line else { return false }
+            return start > end + 1
+        }
+    }
+
+    /// The last line with content in `markup`. A list item's own range includes blank lines after it.
+    private static func lastLine(_ markup: Markup) -> Int? {
+        if let last = markup.children.reversed().first(where: { _ in true }) { return lastLine(last) }
+        guard let end = markup.range?.upperBound else { return nil }
+        return end.column == 1 ? end.line - 1 : end.line
     }
 
     private func table(_ table: Markdown.Table) throws -> ButtermilkCore.Node {
@@ -167,170 +183,8 @@ public struct MarkdownConverter {
 
     // MARK: Serializing
 
-    /// Serializes a document to Markdown.
-    ///
-    /// Top-level blocks are formatted one at a time, because swift-markdown's formatter numbers
-    /// every ordered list the same way. Nested ordered lists always start at 1.
+    /// Serializes a document to Markdown, in the style of Milkdown's remark serializer.
     public func serialize(_ doc: ButtermilkCore.Node) -> String {
-        var parts: [String] = []
-        var previous: String?
-        doc.forEach { child, _, index in
-            let name = child.type.name
-            if name == "front_matter" {
-                // Front matter only works at the start; elsewhere it becomes a YAML code block.
-                if index == 0 {
-                    parts.append("---\n" + (child.textContent.isEmpty ? "" : child.textContent + "\n") + "---")
-                } else {
-                    var text = Document([CodeBlock(language: "yaml", child.textContent + "\n")]).format()
-                    while text.hasSuffix("\n") { text.removeLast() }
-                    parts.append(text)
-                }
-                previous = name
-                return
-            }
-            // Two lists of the same kind in a row would parse back as one list.
-            if previous == name, name == "bullet_list" || name == "ordered_list" { parts.append("<!-- -->") }
-            previous = name
-            var options = MarkupFormatter.Options()
-            if name == "ordered_list" {
-                options = MarkupFormatter.Options(orderedListNumerals: .incrementing(start: UInt(max(child.attrs["order"]?.intValue ?? 1, 0))))
-            }
-            for block in blockMarkup(child) {
-                var text = Document([block]).format(options: options)
-                while text.hasSuffix("\n") { text.removeLast() }
-                parts.append(text)
-            }
-        }
-        return parts.joined(separator: "\n\n") + "\n"
-    }
-
-    private func childBlocks(_ node: ButtermilkCore.Node) -> [BlockMarkup] {
-        var out: [BlockMarkup] = []
-        node.forEach { child, _, _ in out += blockMarkup(child) }
-        return out
-    }
-
-    private func blockMarkup(_ node: ButtermilkCore.Node) -> [BlockMarkup] {
-        switch node.type.name {
-        case "paragraph":
-            return [Paragraph(inlineMarkup(node))]
-        case "heading":
-            return [Heading(level: min(max(node.attrs["level"]?.intValue ?? 1, 1), 6), inlineMarkup(node))]
-        case "blockquote":
-            return [BlockQuote(childBlocks(node))]
-        case "code_block":
-            let language = node.attrs["language"]?.stringValue ?? ""
-            return [CodeBlock(language: language.isEmpty ? nil : language, node.textContent + "\n")]
-        case "horizontal_rule":
-            return [ThematicBreak()]
-        case "bullet_list":
-            return [UnorderedList(listItems(node))]
-        case "ordered_list":
-            var list = OrderedList(listItems(node))
-            list.startIndex = UInt(max(node.attrs["order"]?.intValue ?? 1, 0))
-            return [list]
-        case "table":
-            return [table(node)]
-        default:
-            if node.isTextblock { return [Paragraph(inlineMarkup(node))] }
-            return childBlocks(node)
-        }
-    }
-
-    private func listItems(_ list: ButtermilkCore.Node) -> [ListItem] {
-        var items: [ListItem] = []
-        list.forEach { item, _, _ in
-            var li = ListItem(childBlocks(item))
-            if let checked = item.attrs["checked"]?.boolValue { li.checkbox = checked ? .checked : .unchecked }
-            items.append(li)
-        }
-        return items
-    }
-
-    private func table(_ node: ButtermilkCore.Node) -> Markdown.Table {
-        var rows: [[Markdown.Table.Cell]] = []
-        var alignments: [Markdown.Table.ColumnAlignment?] = []
-        node.forEach { row, _, rowIndex in
-            var cells: [Markdown.Table.Cell] = []
-            row.forEach { cell, _, _ in
-                var inline: [InlineMarkup] = []
-                cell.forEach { block, _, index in
-                    if index > 0 { inline.append(LineBreak()) }
-                    inline += inlineMarkup(block)
-                }
-                var c = Markdown.Table.Cell(inline)
-                c.colspan = UInt(min(max(cell.attrs["colspan"]?.intValue ?? 1, 1), Tables.maxCellSpan))
-                cells.append(c)
-                // Covered columns get empty cells with a span of 0.
-                for _ in 1..<Int(c.colspan) { var gap = Markdown.Table.Cell([]); gap.colspan = 0; cells.append(gap) }
-                if rowIndex == 0 {
-                    let a: Markdown.Table.ColumnAlignment? = switch cell.attrs["alignment"]?.stringValue {
-                    case "left": .left
-                    case "center": .center
-                    case "right": .right
-                    default: nil
-                    }
-                    alignments += Array(repeating: a, count: Int(c.colspan))
-                }
-            }
-            rows.append(cells)
-        }
-        let head = Markdown.Table.Head(rows.first ?? [])
-        let body = Markdown.Table.Body(rows.dropFirst().map { Markdown.Table.Row($0) })
-        return Markdown.Table(columnAlignments: alignments, header: head, body: body)
-    }
-
-    /// Turns inline content with flat mark sets into nested Markdown elements.
-    private func inlineMarkup(_ parent: ButtermilkCore.Node) -> [InlineMarkup] {
-        var items: [(ButtermilkCore.Node, [Mark])] = []
-        parent.forEach { child, _, _ in items.append((child, child.marks)) }
-        return nest(items[...])
-    }
-
-    private func nest(_ items: ArraySlice<(ButtermilkCore.Node, [Mark])>) -> [InlineMarkup] {
-        var out: [InlineMarkup] = []
-        var i = items.startIndex
-        while i < items.endIndex {
-            let (node, marks) = items[i]
-            // Code marks become the innermost element, since inline code cannot contain markup.
-            guard let outer = marks.first(where: { !$0.type.spec.code }) else {
-                out.append(leaf(node, code: !marks.isEmpty))
-                i += 1
-                continue
-            }
-            var j = i
-            var run: [(ButtermilkCore.Node, [Mark])] = []
-            while j < items.endIndex, items[j].1.contains(outer) {
-                run.append((items[j].0, items[j].1.filter { $0 != outer }))
-                j += 1
-            }
-            out += wrap(outer, nest(run[...]))
-            i = j
-        }
-        return out
-    }
-
-    private func leaf(_ node: ButtermilkCore.Node, code: Bool) -> InlineMarkup {
-        if let text = node.text { return code ? InlineCode(text) : Markdown.Text(text) }
-        switch node.type.name {
-        case "hard_break", "hardbreak": return LineBreak()
-        case "image":
-            return Markdown.Image(source: node.attrs["src"]?.stringValue ?? "", title: node.attrs["title"]?.stringValue,
-                                  [Markdown.Text(node.attrs["alt"]?.stringValue ?? "")])
-        default: return Markdown.Text(node.textContent)
-        }
-    }
-
-    /// Marks Markdown has no syntax for are dropped; their content stays.
-    private func wrap(_ mark: Mark, _ children: [InlineMarkup]) -> [InlineMarkup] {
-        switch mark.type.name {
-        case "em", "emphasis": return [Emphasis(children)]
-        case "strong": return [Strong(children)]
-        case "strike_through", "strikethrough": return [Strikethrough(children)]
-        case "link":
-            return [Markdown.Link(destination: mark.attrs["href"]?.stringValue, title: mark.attrs["title"]?.stringValue, children.compactMap { $0 as? RecurringInlineMarkup })]
-        default:
-            return children
-        }
+        MarkdownWriter().document(doc)
     }
 }

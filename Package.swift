@@ -17,7 +17,7 @@ let package = Package(
         .target(name: "ButtermilkView", dependencies: ["ButtermilkCore"]),
         .testTarget(name: "ButtermilkViewTests", dependencies: ["ButtermilkView"]),
         .target(name: "ButtermilkMarkdown", dependencies: ["ButtermilkCore", .product(name: "Markdown", package: "swift-markdown")]),
-        .testTarget(name: "ButtermilkMarkdownTests", dependencies: ["ButtermilkMarkdown"]),
+        .testTarget(name: "ButtermilkMarkdownTests", dependencies: ["ButtermilkMarkdown"], resources: [.copy("Fixtures")]),
         .testTarget(
             name: "ButtermilkCoreTests",
             dependencies: ["ButtermilkCore"],
