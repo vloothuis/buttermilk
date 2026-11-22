@@ -24,7 +24,14 @@ struct MarkdownWriter {
             previous = (name, alternate)
             if name == "front_matter" {
                 // Front matter only works at the start; elsewhere it becomes a YAML code block.
-                out.append(top && index == 0
+                // A `---` or `...` line inside the text would close it early.
+                let text = child.textContent
+                // Swift treats "\r\n" as one Character, so split on both.
+                let breaksOut = text.split(omittingEmptySubsequences: false, whereSeparator: { $0 == "\n" || $0 == "\r\n" }).contains {
+                    let line = $0.hasSuffix("\r") ? $0.dropLast() : $0
+                    return line == "---" || line == "..."
+                }
+                out.append(top && index == 0 && !breaksOut
                     ? "---\n" + (child.textContent.isEmpty ? "" : child.textContent + "\n") + "---"
                     : codeBlock(child.textContent, language: "yaml"))
             } else {

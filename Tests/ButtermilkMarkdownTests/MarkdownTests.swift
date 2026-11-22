@@ -130,4 +130,17 @@ final class MarkdownSafetyTests: XCTestCase {
                                             s.node("front_matter", nil, [s.text("a: 1")])])
         XCTAssertEqual(md.serialize(moved), "x\n\n```yaml\na: 1\n```\n")
     }
+
+    func testFrontMatterCannotBreakOut() throws {
+        let s = MarkdownSchema.schema
+        for yaml in ["a: 1\n---\n<script>x</script>", "a: 1\r\n...\r\n<script>x</script>", "```\n---\n<script>x</script>"] {
+            let doc = try s.node("doc", nil, [s.node("front_matter", nil, [s.text(yaml)])])
+            let back = try md.parse(md.serialize(doc))
+            XCTAssertEqual(back.childCount, 1)
+            XCTAssertEqual(back.child(0).type.name, "code_block")
+            XCTAssertEqual(back.child(0).attrs["language"]?.stringValue, "yaml")
+            XCTAssertEqual(back.child(0).textContent, yaml.replacingOccurrences(of: "\r\n", with: "\n"))
+        }
+    }
+
 }
