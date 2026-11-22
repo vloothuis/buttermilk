@@ -29,6 +29,9 @@ that Milkdown uses and adds a native TextKit view. It does not use a web view.
   - Diagram blocks: `DiagramBlocks(languages:completer:linter:).install(on: core)` edits code
     blocks in a diagram language in an embedded, highlighted code editor (`DiagramEditor`), with
     host-provided completions and lint diagnostics shown as underlines.
+  - Table controls: `TableControl` lists the row, column and table commands that apply to the
+    selection (`core.tableControls`, `core.run(_:)`). The AppKit view adds them to the context
+    menu; the UIKit view adds a Table submenu to the edit menu.
   - `DocumentRenderer` turns a document into attributed text. It knows the basic, list and table
     schemas and the node names Milkdown uses.
 

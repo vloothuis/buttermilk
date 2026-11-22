@@ -206,6 +206,22 @@ open class ButtermilkTextView: UITextView, EditorViewing, UITextViewDelegate {
         return false
     }
 
+    /// Adds a Table submenu with the table controls when the selection is in a table.
+    @available(iOS 16.0, *)
+    public func textView(_ textView: UITextView, editMenuForTextIn range: NSRange,
+                         suggestedActions: [UIMenuElement]) -> UIMenu? {
+        let base = forwardingDelegate?.textView?(textView, editMenuForTextIn: range, suggestedActions: suggestedActions)
+            ?? UIMenu(children: suggestedActions)
+        let controls = core.tableControls
+        guard !controls.isEmpty else { return base }
+        let actions = controls.map { control in
+            UIAction(title: control.title, attributes: control == .deleteTable ? .destructive : []) { [weak self] _ in
+                self?.core.run(control)
+            }
+        }
+        return base.replacingChildren(base.children + [UIMenu(title: "Table", children: actions)])
+    }
+
     public func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange,
                          interaction: UITextItemInteraction) -> Bool {
         core.openLink?(URL)

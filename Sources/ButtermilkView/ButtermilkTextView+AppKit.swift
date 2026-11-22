@@ -399,6 +399,29 @@ open class ButtermilkTextView: NSTextView, EditorViewing {
         Tables.endCellDrag(self)
     }
 
+    /// Adds the table controls to the context menu when the selection is in a table.
+    override open func menu(for event: NSEvent) -> NSMenu? {
+        let menu = super.menu(for: event) ?? NSMenu()
+        let controls = core.tableControls
+        guard !controls.isEmpty else { return menu }
+        var index = 0
+        for control in controls {
+            let item = NSMenuItem(title: control.title, action: #selector(performTableControl(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = control.rawValue
+            menu.insertItem(item, at: index)
+            index += 1
+            if control == .addColumnAfter || control == .deleteColumn { menu.insertItem(.separator(), at: index); index += 1 }
+        }
+        if menu.items.count > index, !(menu.items[index - 1].isSeparatorItem) { menu.insertItem(.separator(), at: index) }
+        return menu
+    }
+
+    @objc private func performTableControl(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let control = TableControl(rawValue: raw) else { return }
+        core.run(control)
+    }
+
     override open func clicked(onLink link: Any, at charIndex: Int) {
         if let url = link as? URL { core.openLink?(url) }
     }

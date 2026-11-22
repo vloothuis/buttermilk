@@ -135,7 +135,11 @@ public enum TableCommands {
             } else {
                 let type = refRow.map { table.nodeAt(map.map[index + $0 * map.width])?.type }
                     ?? Tables.nodeTypes(table.type.schema)["cell"]
-                if let node = type?.createAndFill() { cells.append(node) }
+                // Keep the column alignment (GFM tables) of the adjacent row.
+                let neighbor = table.nodeAt(map.map[row > 0 ? index - map.width : index])
+                var attrs: Attrs?
+                if let type, type.attrs["alignment"] != nil, let a = neighbor?.attrs["alignment"] { attrs = ["alignment": a] }
+                if let node = type?.createAndFill(attrs) { cells.append(node) }
             }
             col += 1; index += 1
         }
