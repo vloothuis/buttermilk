@@ -12,6 +12,8 @@ that Milkdown uses and adds a native TextKit view. It does not use a web view.
   - State: `EditorState`, `Transaction`, selections (text, node, all), plugins and plugin keys.
   - Commands: the `prosemirror-commands` set, list commands and `baseKeymap`.
   - Keymap, History (undo and redo), InputRules and GapCursor.
+  - Search: the `prosemirror-search` query, plugin and commands (find next and previous, replace,
+    replace all). Matches are inline decorations; pass `matchAttributes` to style them.
   - Tables: the `prosemirror-tables` schema, `TableMap`, `CellSelection`, commands, paste handling
     and the table editing plugin.
 - **ButtermilkView**: a native editor view.
