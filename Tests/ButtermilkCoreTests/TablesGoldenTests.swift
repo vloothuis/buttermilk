@@ -97,3 +97,24 @@ final class TablesGoldenTests: XCTestCase {
         m.finish("tables", total: total)
     }
 }
+
+final class TableSafetyTests: XCTestCase {
+    func cell(_ attrs: JSON = [:]) -> JSON {
+        ["type": "table_cell", "attrs": attrs, "content": [["type": "paragraph"]]]
+    }
+
+    func testHostileSpansAreRejected() {
+        let doc: JSON = ["type": "doc", "content": [["type": "table", "content": [
+            ["type": "table_row", "content": [cell(["colspan": 1_000_000])]]]]]]
+        XCTAssertThrowsError(try tableSchema.nodeFromJSON(doc, validate: true))
+    }
+
+    func testBadCellSelectionJSONThrows() throws {
+        CellSelection.registerJSON()
+        let doc = try tableSchema.nodeFromJSON(["type": "doc", "content": [["type": "table", "content": [
+            ["type": "table_row", "content": [cell(), cell()]]]]]])
+        // Position 1 is inside the table but before the row, not before a cell.
+        XCTAssertThrowsError(try Selection.fromJSON(doc, ["type": "cell", "anchor": 1, "head": 1]))
+        XCTAssertNoThrow(try Selection.fromJSON(doc, ["type": "cell", "anchor": 2, "head": 6]))
+    }
+}

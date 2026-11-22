@@ -13,9 +13,14 @@ public enum Tables {
     /// Node specs for `table`, `table_row`, `table_cell` and `table_header`.
     public static func nodes(cellContent: String, cellAttributes: [String: CellAttribute] = [:],
                              tableGroup: String? = nil) -> [(String, NodeSpec)] {
+        let span: (JSON) throws -> Void = { value in
+            guard let n = value.intValue, n >= 1, n <= maxCellSpan else {
+                throw ProseError.range("Cell spans must be whole numbers from 1 to \(maxCellSpan)")
+            }
+        }
         var attrs: [String: AttributeSpec] = [
-            "colspan": AttributeSpec(default: 1, validateType: "number"),
-            "rowspan": AttributeSpec(default: 1, validateType: "number"),
+            "colspan": AttributeSpec(default: 1, validate: span),
+            "rowspan": AttributeSpec(default: 1, validate: span),
             "colwidth": AttributeSpec(default: .null, validate: { value in
                 if value == .null { return }
                 guard let items = value.arrayValue else { throw ProseError.range("colwidth must be null or an array") }
@@ -106,6 +111,13 @@ public enum Tables {
             before = node.lastChild; p -= 1
         }
         return nil
+    }
+
+    /// Whether `pos` points in front of a cell that the table map knows about. Use it to check
+    /// untrusted positions before building a ``CellSelection``.
+    public static func isCellPosition(_ pos: ResolvedPos) -> Bool {
+        guard pointsAtCell(pos), pos.depth >= 2, pos.node(-1).type.tableRole == "table" else { return false }
+        return TableMap.get(pos.node(-1)).map.contains(pos.pos - pos.start(-1))
     }
 
     /// Whether `pos` points in front of a cell.

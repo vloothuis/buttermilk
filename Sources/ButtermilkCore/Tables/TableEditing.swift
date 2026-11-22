@@ -43,7 +43,10 @@ extension Tables {
         return ensureRectangular(schema, rows)
     }
 
-    static func ensureRectangular(_ schema: Schema, _ rows: [Fragment]) -> PastedCells {
+    /// Pasted cell blocks larger than this (in grid slots) are refused.
+    static let maxPastedSlots = 100_000
+
+    static func ensureRectangular(_ schema: Schema, _ rows: [Fragment]) -> PastedCells? {
         var rows = rows
         var widths: [Int] = []
         for i in 0..<rows.count {
@@ -59,6 +62,7 @@ extension Tables {
             }
         }
         let width = widths.max() ?? 0
+        if width * widths.count > maxPastedSlots { return nil }
         for r in 0..<widths.count {
             if r >= rows.count { rows.append(.empty) }
             if widths[r] < width, let empty = nodeTypes(schema)["cell"]?.createAndFill() {

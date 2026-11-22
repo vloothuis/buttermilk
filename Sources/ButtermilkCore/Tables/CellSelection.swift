@@ -31,7 +31,7 @@ public final class CellSelection: Selection {
     public static func create(_ doc: Node, _ anchorCell: Int, _ headCell: Int? = nil) throws -> CellSelection {
         let a = doc.resolve(try checkedPosition(doc, .number(Double(anchorCell))))
         let h = doc.resolve(try checkedPosition(doc, .number(Double(headCell ?? anchorCell))))
-        guard Tables.pointsAtCell(a), Tables.pointsAtCell(h), Tables.inSameTable(a, h) else {
+        guard Tables.isCellPosition(a), Tables.isCellPosition(h), Tables.inSameTable(a, h) else {
             throw ProseError.range("Cell selection positions must point at cells in the same table")
         }
         return CellSelection(a, h)
@@ -41,7 +41,8 @@ public final class CellSelection: Selection {
 
     public override func map(_ doc: Node, _ mapping: Mappable) -> Selection {
         let a = doc.resolve(mapping.map(anchorCell.pos)), h = doc.resolve(mapping.map(headCell.pos))
-        if Tables.pointsAtCell(a) && Tables.pointsAtCell(h) && Tables.inSameTable(a, h) {
+        if Tables.pointsAtCell(a) && Tables.pointsAtCell(h) && Tables.inSameTable(a, h) &&
+            Tables.isCellPosition(a) && Tables.isCellPosition(h) {
             let tableChanged = anchorCell.node(-1) !== a.node(-1)
             if tableChanged && isRowSelection { return CellSelection.rowSelection(a, h) }
             if tableChanged && isColSelection { return CellSelection.colSelection(a, h) }
@@ -209,7 +210,8 @@ public struct CellBookmark: SelectionBookmark {
     public func resolve(_ doc: Node) -> Selection {
         let a = doc.resolve(anchor), h = doc.resolve(head)
         if a.parent.type.tableRole == "row" && h.parent.type.tableRole == "row" &&
-            a.index() < a.parent.childCount && h.index() < h.parent.childCount && Tables.inSameTable(a, h) {
+            a.index() < a.parent.childCount && h.index() < h.parent.childCount && Tables.inSameTable(a, h) &&
+            Tables.isCellPosition(a) && Tables.isCellPosition(h) {
             return CellSelection(a, h)
         }
         return Selection.near(h, bias: 1)
@@ -221,6 +223,6 @@ func makeNode(_ type: NodeType, _ attrs: Attrs, _ content: Fragment) -> Node {
 }
 
 extension Attrs {
-    var colspan: Int { self["colspan"]?.intValue ?? 1 }
-    var rowspan: Int { self["rowspan"]?.intValue ?? 1 }
+    var colspan: Int { clampSpan(self["colspan"]) }
+    var rowspan: Int { clampSpan(self["rowspan"]) }
 }

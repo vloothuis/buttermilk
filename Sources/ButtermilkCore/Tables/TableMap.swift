@@ -128,7 +128,9 @@ public final class TableMap {
     static func compute(_ table: Node) -> TableMap {
         precondition(table.type.tableRole == "table", "Not a table node: \(table.type.name)")
         let width = findWidth(table), height = table.childCount
-        var map = [Int](repeating: 0, count: max(0, width * height))
+        let (size, overflow) = max(width, 0).multipliedReportingOverflow(by: height)
+        precondition(!overflow && size <= 50_000_000, "Table too large")
+        var map = [Int](repeating: 0, count: size)
         var mapPos = 0
         var problems: [TableProblem]?
         var colWidths: [Int: (w: Double, n: Int)] = [:]
@@ -215,7 +217,8 @@ public final class TableMap {
             guard let node = table.nodeAt(pos) else { preconditionFailure("No cell with offset \(pos) found") }
             var updated: [JSON]?
             let existing = node.attrs["colwidth"]?.arrayValue
-            for j in 0..<max(node.attrs["colspan"]?.intValue ?? 0, 0) {
+            // A missing slot maps to offset 0, the first row, which has no colspan.
+            for j in 0..<(node.attrs["colspan"] == nil ? 0 : node.colspan) {
                 guard let colWidth = colWidths[(i + j) % map.width] else { continue }
                 if existing == nil || existing?[safe: j]?.doubleValue != colWidth {
                     if updated == nil { updated = existing ?? Array(repeating: .number(0), count: node.colspan) }
@@ -237,8 +240,13 @@ public extension NodeType {
     var tableRole: String? { spec.extra["tableRole"] as? String }
 }
 
+/// Spans outside this range are clamped, so a hostile document cannot make table maps huge.
+let maxCellSpan = 1000
+
+func clampSpan(_ value: JSON?) -> Int { min(max(value?.intValue ?? 1, 1), maxCellSpan) }
+
 extension Node {
-    var colspan: Int { attrs["colspan"]?.intValue ?? 1 }
-    var rowspan: Int { attrs["rowspan"]?.intValue ?? 1 }
+    var colspan: Int { clampSpan(attrs["colspan"]) }
+    var rowspan: Int { clampSpan(attrs["rowspan"]) }
     var isCellNode: Bool { type.tableRole == "cell" || type.tableRole == "header_cell" }
 }
