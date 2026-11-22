@@ -13,6 +13,8 @@ open class ButtermilkTextView: NSTextView, EditorViewing {
         /// Document range the current composition replaces.
     private var compositionRange: (from: Int, to: Int)?
     private var lastMoveBias = 1
+    private var pendingScrollAnchor: ScrollAnchor?
+    private var isApplyingScrollAnchor = false
 
     public var state: EditorState { core.state }
     public var composing: Bool { compositionRange != nil }
@@ -174,6 +176,69 @@ open class ButtermilkTextView: NSTextView, EditorViewing {
     override open func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         layoutNodeViews()
+        applyPendingScrollAnchor()
+    }
+
+    override open func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        applyPendingScrollAnchor()
+    }
+
+    // MARK: View state
+
+    /// The current selection and scroll position.
+    public func saveViewState() -> EditorViewState {
+        EditorViewState(selection: state.selection.toJSON(), scrollAnchor: pendingScrollAnchor ?? scrollAnchor())
+    }
+
+    /// Restores a saved selection and scroll position, clamped to the current document. When
+    /// the view is not in a scroll view yet, the scroll position is applied at the next resize
+    /// or when the view moves to a window.
+    public func restoreViewState(_ viewState: EditorViewState) {
+        if let json = viewState.selection { core.restoreSelection(json) }
+        if let anchor = viewState.scrollAnchor { pendingScrollAnchor = anchor; applyPendingScrollAnchor() }
+    }
+
+    /// The scroll anchor for the top of the visible area, or nil outside a scroll view.
+    public func scrollAnchor() -> ScrollAnchor? {
+        guard let clip = enclosingScrollView?.contentView, let layoutManager, let textContainer else { return nil }
+        let length = (string as NSString).length
+        guard length > 0 else { return ScrollAnchor(pos: 0, offset: 0) }
+        let top = convert(clip.bounds, from: clip).minY - textContainerOrigin.y
+        let glyph = layoutManager.glyphIndex(for: NSPoint(x: 0, y: max(top, 0)), in: textContainer)
+        let line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        let offset = min(layoutManager.characterIndexForGlyph(at: glyph), length - 1)
+        return ScrollAnchor(pos: core.rendered.map.position(for: offset), offset: Double(top - line.minY))
+    }
+
+    /// Scrolls so the top of the visible area is at `anchor`. Returns false outside a scroll view.
+    @discardableResult
+    public func scroll(to anchor: ScrollAnchor) -> Bool {
+        guard let scrollView = enclosingScrollView, let layoutManager, let textContainer else { return false }
+        let length = (string as NSString).length
+        var y = -textContainerOrigin.y
+        if length > 0 {
+            let offset = min(core.rendered.map.offset(for: core.clampedPosition(anchor)), length - 1)
+            let glyphs = layoutManager.glyphRange(forCharacterRange: NSRange(location: offset, length: 1), actualCharacterRange: nil)
+            layoutManager.ensureLayout(forGlyphRange: NSRange(location: 0, length: NSMaxRange(glyphs)))
+            y = layoutManager.lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil).minY
+        }
+        // Non-contiguous layout may not have sized the view past the anchor yet.
+        let used = layoutManager.usedRect(for: textContainer).maxY + 2 * textContainerOrigin.y
+        if frame.height < used { setFrameSize(NSSize(width: frame.width, height: used)) }
+        let clip = scrollView.contentView
+        var point = convert(NSPoint(x: 0, y: y + textContainerOrigin.y + CGFloat(anchor.offset)), to: clip)
+        point.x = clip.bounds.minX
+        clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: point, size: clip.bounds.size)).origin)
+        scrollView.reflectScrolledClipView(clip)
+        return true
+    }
+
+    private func applyPendingScrollAnchor() {
+        guard let anchor = pendingScrollAnchor, !isApplyingScrollAnchor else { return }
+        isApplyingScrollAnchor = true
+        defer { isApplyingScrollAnchor = false }
+        if scroll(to: anchor) { pendingScrollAnchor = nil }
     }
 
     /// Scrolls to the selection head. Unlike `scrollRangeToVisible`, this only lays out the

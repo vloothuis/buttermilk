@@ -11,6 +11,8 @@ open class ButtermilkTextView: UITextView, EditorViewing, UITextViewDelegate {
     public let core: EditorCore
     private var isRendering = false
     private var compositionRange: (from: Int, to: Int)?
+    private var pendingScrollAnchor: ScrollAnchor?
+    private var isApplyingScrollAnchor = false
 
     public var state: EditorState { core.state }
     public var composing: Bool { compositionRange != nil }
@@ -160,6 +162,58 @@ open class ButtermilkTextView: UITextView, EditorViewing, UITextViewDelegate {
     override open func layoutSubviews() {
         super.layoutSubviews()
         layoutNodeViews()
+        applyPendingScrollAnchor()
+    }
+
+    // MARK: View state
+
+    /// The current selection and scroll position.
+    public func saveViewState() -> EditorViewState {
+        EditorViewState(selection: state.selection.toJSON(), scrollAnchor: pendingScrollAnchor ?? scrollAnchor())
+    }
+
+    /// Restores a saved selection and scroll position, clamped to the current document. Before
+    /// the view has a size, the scroll position is applied at the next layout.
+    public func restoreViewState(_ viewState: EditorViewState) {
+        if let json = viewState.selection { core.restoreSelection(json) }
+        if let anchor = viewState.scrollAnchor { pendingScrollAnchor = anchor; applyPendingScrollAnchor() }
+    }
+
+    /// The scroll anchor for the top of the visible area.
+    public func scrollAnchor() -> ScrollAnchor {
+        let length = (text as NSString).length
+        guard length > 0 else { return ScrollAnchor(pos: 0, offset: 0) }
+        let top = contentOffset.y + adjustedContentInset.top - textContainerInset.top
+        let glyph = layoutManager.glyphIndex(for: CGPoint(x: 0, y: max(top, 0)), in: textContainer)
+        let line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        let offset = min(layoutManager.characterIndexForGlyph(at: glyph), length - 1)
+        return ScrollAnchor(pos: core.rendered.map.position(for: offset), offset: Double(top - line.minY))
+    }
+
+    /// Scrolls so the top of the visible area is at `anchor`. Returns false before the view has a size.
+    @discardableResult
+    public func scroll(to anchor: ScrollAnchor) -> Bool {
+        guard bounds.height > 0 else { return false }
+        let length = (text as NSString).length
+        var y: CGFloat = 0
+        if length > 0 {
+            let offset = min(core.rendered.map.offset(for: core.clampedPosition(anchor)), length - 1)
+            let glyphs = layoutManager.glyphRange(forCharacterRange: NSRange(location: offset, length: 1), actualCharacterRange: nil)
+            layoutManager.ensureLayout(forGlyphRange: NSRange(location: 0, length: NSMaxRange(glyphs)))
+            y = layoutManager.lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil).minY
+        }
+        let inset = adjustedContentInset
+        let target = y + textContainerInset.top + CGFloat(anchor.offset) - inset.top
+        let maxY = max(contentSize.height + inset.bottom - bounds.height, -inset.top)
+        contentOffset = CGPoint(x: contentOffset.x, y: min(max(target, -inset.top), maxY))
+        return true
+    }
+
+    private func applyPendingScrollAnchor() {
+        guard let anchor = pendingScrollAnchor, !isApplyingScrollAnchor else { return }
+        isApplyingScrollAnchor = true
+        defer { isApplyingScrollAnchor = false }
+        if scroll(to: anchor) { pendingScrollAnchor = nil }
     }
 
     // MARK: Delegate
