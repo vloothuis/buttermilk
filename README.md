@@ -14,6 +14,8 @@ that Milkdown uses and adds a native TextKit view. It does not use a web view.
   - Keymap, History (undo and redo, with action names such as "Typing" for the Edit menu), InputRules, GapCursor and KillRing (Emacs-style kill and yank).
   - Search: the `prosemirror-search` query, plugin and commands (find next and previous, replace,
     replace all). Matches are inline decorations; pass `matchAttributes` to style them.
+  - Outline: top-level headings as a list or tree, the section at a position with its ancestor
+    headings, and commands to select a section or move to the next or previous heading.
   - Tables: the `prosemirror-tables` schema, `TableMap`, `CellSelection`, commands, paste handling
     and the table editing plugin.
 - **ButtermilkView**: a native editor view.
