@@ -24,8 +24,15 @@ public struct RenderedDocument {
 /// render their children.
 public struct DocumentRenderer {
     public var theme: Theme
+    /// Loads the image for an image node's `src`. The default loads nothing, so documents
+    /// cannot make the editor read files or reach the network; images show a placeholder.
+    public var imageLoader: ((String) -> PlatformImage?)?
+    /// URL schemes a link mark may open. Other links render styled but inactive.
+    public var linkSchemes: Set<String> = ["http", "https", "mailto"]
 
-    public init(theme: Theme = .standard) { self.theme = theme }
+    public init(theme: Theme = .standard, imageLoader: ((String) -> PlatformImage?)? = nil) {
+        self.theme = theme; self.imageLoader = imageLoader
+    }
 
     struct Context {
         var level = 0
@@ -40,7 +47,7 @@ public struct DocumentRenderer {
     }
 
     public func render(_ doc: Node) -> RenderedDocument {
-        let state = RenderState(theme: theme)
+        let state = RenderState(theme: theme, imageLoader: imageLoader, linkSchemes: linkSchemes)
         state.blocks(doc, contentStart: 0, Context())
         return RenderedDocument(text: state.out, map: state.map)
     }
@@ -51,7 +58,12 @@ private final class RenderState {
     let out = NSMutableAttributedString()
     var map = PositionMap()
 
-    init(theme: Theme) { self.theme = theme }
+    let imageLoader: ((String) -> PlatformImage?)?
+    let linkSchemes: Set<String>
+
+    init(theme: Theme, imageLoader: ((String) -> PlatformImage?)?, linkSchemes: Set<String>) {
+        self.theme = theme; self.imageLoader = imageLoader; self.linkSchemes = linkSchemes
+    }
 
     func blocks(_ parent: Node, contentStart: Int, _ ctx: DocumentRenderer.Context) {
         var ctx = ctx
@@ -216,7 +228,10 @@ private final class RenderState {
         case "link":
             attrs[.foregroundColor] = theme.linkColor
             attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
-            if let href = mark.attrs["href"]?.stringValue { attrs[.link] = href }
+            if let href = mark.attrs["href"]?.stringValue, let url = URL(string: href),
+               let scheme = url.scheme?.lowercased(), linkSchemes.contains(scheme) {
+                attrs[.link] = url
+            }
         case "strike_through", "strikethrough", "strike":
             attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
         default:
@@ -229,7 +244,7 @@ private final class RenderState {
     func attachment(for node: Node, _ attrs: [NSAttributedString.Key: Any]) -> NSAttributedString {
         let attachment = NSTextAttachment()
         let font = attrs[.font] as? PlatformFont ?? theme.font
-        if node.type.name == "image", let src = node.attrs["src"]?.stringValue, let image = Self.loadImage(src) {
+        if node.type.name == "image", let src = node.attrs["src"]?.stringValue, let image = imageLoader?(src) {
             attachment.image = image
             let maxWidth: CGFloat = 480
             let scale = min(1, maxWidth / max(image.size.width, 1))
@@ -247,7 +262,7 @@ private final class RenderState {
     func leafBlock(_ node: Node, _ pos: Int, _ ctx: DocumentRenderer.Context) {
         let base = baseAttributes(ctx)
         let attachment = NSTextAttachment()
-        if node.type.name == "image", let src = node.attrs["src"]?.stringValue, let image = Self.loadImage(src) {
+        if node.type.name == "image", let src = node.attrs["src"]?.stringValue, let image = imageLoader?(src) {
             attachment.image = image
             attachment.bounds = CGRect(origin: .zero, size: image.size)
         } else {
@@ -311,18 +326,6 @@ private final class RenderState {
     }
 
     // MARK: Images
-
-    static func loadImage(_ src: String) -> PlatformImage? {
-        let path: String
-        if src.hasPrefix("file://"), let url = URL(string: src) { path = url.path }
-        else if src.hasPrefix("/") { path = src }
-        else { return nil }
-        #if canImport(AppKit)
-        return NSImage(contentsOfFile: path)
-        #else
-        return UIImage(contentsOfFile: path)
-        #endif
-    }
 
     static func placeholder(_ size: CGSize, _ color: PlatformColor) -> PlatformImage {
         draw(size) { rect in

@@ -325,6 +325,10 @@ open class ButtermilkTextView: NSTextView, EditorViewing {
         Tables.endCellDrag(self)
     }
 
+    override open func clicked(onLink link: Any, at charIndex: Int) {
+        if let url = link as? URL { core.openLink?(url) }
+    }
+
     // MARK: Clipboard
 
     override open func writeSelection(to pboard: NSPasteboard, types: [NSPasteboard.PasteboardType]) -> Bool {

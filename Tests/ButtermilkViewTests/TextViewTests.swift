@@ -170,3 +170,23 @@ final class RenderSnapshotTests: XCTestCase {
     }
 }
 #endif
+
+#if canImport(AppKit)
+final class RenderSafetyTests: XCTestCase {
+    func testUnsafeLinksAndImagesAreInert() throws {
+        let schema = BasicSchema.schema
+        let doc = try schema.nodeFromJSON(["type": "doc", "content": [["type": "paragraph", "content": [
+            ["type": "text", "text": "a", "marks": [["type": "link", "attrs": ["href": "javascript:alert(1)"]]]],
+            ["type": "text", "text": "b", "marks": [["type": "link", "attrs": ["href": "https://example.com"]]]],
+            ["type": "image", "attrs": ["src": "/etc/hosts"]]]]]])
+        var asked: [String] = []
+        var renderer = DocumentRenderer()
+        let text = renderer.render(doc).text
+        XCTAssertNil(text.attribute(.link, at: 0, effectiveRange: nil))
+        XCTAssertEqual(text.attribute(.link, at: 1, effectiveRange: nil) as? URL, URL(string: "https://example.com"))
+        renderer.imageLoader = { asked.append($0); return nil }
+        _ = renderer.render(doc)
+        XCTAssertEqual(asked, ["/etc/hosts"])
+    }
+}
+#endif

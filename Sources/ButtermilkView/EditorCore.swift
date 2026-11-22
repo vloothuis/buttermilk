@@ -13,6 +13,8 @@ public final class EditorCore {
     var onChange: ((EditorState, EditorState) -> Void)?
     /// Called after every state change with the new and the previous state.
     public var onChangeObservers: [(EditorState, EditorState) -> Void] = []
+    /// Called when the user activates a link. The view opens nothing by itself.
+    public var openLink: ((URL) -> Void)?
     /// Called to process a transaction. The default applies it with ``apply(_:)``.
     public var dispatchTransaction: ((Transaction) -> Void)?
 

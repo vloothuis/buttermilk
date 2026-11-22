@@ -140,6 +140,12 @@ open class ButtermilkTextView: UITextView, EditorViewing, UITextViewDelegate {
         return false
     }
 
+    public func textView(_ textView: UITextView, shouldInteractWith URL: URL, in characterRange: NSRange,
+                         interaction: UITextItemInteraction) -> Bool {
+        core.openLink?(URL)
+        return false
+    }
+
     private func syncSelection(_ from: Int, _ to: Int) {
         let sel = state.selection
         guard sel.from != from || sel.to != to else { return }
