@@ -128,5 +128,14 @@ final class TableSafetyTests: XCTestCase {
         XCTAssertEqual(map.width, 0)
         let state = try EditorState.create(.init(doc: doc, plugins: [Tables.editing()]))
         XCTAssertFalse(Tables.fixTables(state)?.docChanged ?? false, "oversized tables are left alone")
+        // Table commands and selection normalization must not touch the empty map.
+        let inCell = try state.apply(state.tr.setSelection(TextSelection.near(doc.resolve(4))))
+        XCTAssertFalse(Tables.isInTable(inCell))
+        for command in [TableCommands.addColumnAfter, TableCommands.addRowAfter, TableCommands.deleteRow,
+                        TableCommands.mergeCells, TableCommands.splitCell, TableCommands.goToNextCell(1)] {
+            XCTAssertFalse(command(inCell, { _ in }, nil))
+        }
+        let tableSel = try state.apply(state.tr.setSelection(NodeSelection.create(doc, 0)))
+        XCTAssertNil(Tables.normalizeSelection(tableSel, nil))
     }
 }

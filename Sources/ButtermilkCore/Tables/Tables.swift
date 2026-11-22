@@ -61,7 +61,11 @@ public enum Tables {
     public static func cellAround(_ pos: ResolvedPos) -> ResolvedPos? {
         var d = pos.depth - 1
         while d > 0 {
-            if pos.node(d).type.tableRole == "row" { return pos.node(0).resolve(pos.before(d + 1)) }
+            if pos.node(d).type.tableRole == "row" {
+                // Oversized tables have no map, so table editing leaves them alone.
+                guard d > 0, isUsable(pos.node(d - 1)) else { return nil }
+                return pos.node(0).resolve(pos.before(d + 1))
+            }
             d -= 1
         }
         return nil
@@ -70,10 +74,15 @@ public enum Tables {
     static func cellWrapping(_ pos: ResolvedPos) -> Node? {
         var d = pos.depth
         while d > 0 {
-            if pos.node(d).isCellNode { return pos.node(d) }
+            if pos.node(d).isCellNode { return d >= 2 && isUsable(pos.node(d - 2)) ? pos.node(d) : nil }
             d -= 1
         }
         return nil
+    }
+
+    /// Whether `table` is small enough to have a table map.
+    static func isUsable(_ table: Node) -> Bool {
+        TableMap.get(table).problems?.contains(.tooLarge) != true
     }
 
     /// Whether the selection head is inside a table.
@@ -81,7 +90,7 @@ public enum Tables {
         let head = state.selection.resolvedHead
         var d = head.depth
         while d > 0 {
-            if head.node(d).type.tableRole == "row" { return true }
+            if head.node(d).type.tableRole == "row" { return isUsable(head.node(d - 1)) }
             d -= 1
         }
         return false
@@ -89,6 +98,11 @@ public enum Tables {
 
     /// The cell the selection is in, or the cell nearest to it.
     public static func selectionCell(_ state: EditorState) -> ResolvedPos? {
+        guard let cell = selectionCellUnchecked(state), cell.depth > 0, isUsable(cell.node(-1)) else { return nil }
+        return cell
+    }
+
+    private static func selectionCellUnchecked(_ state: EditorState) -> ResolvedPos? {
         let sel = state.selection
         if let cells = sel as? CellSelection {
             return cells.anchorCell.pos > cells.headCell.pos ? cells.anchorCell : cells.headCell
@@ -363,12 +377,16 @@ public enum Tables {
         let doc = tr?.doc ?? state.doc
         var normalize: Selection?
         if let nodeSel = sel as? NodeSelection, let role = nodeSel.node.type.tableRole {
-            if role == "cell" || role == "header_cell" {
+            let rFrom = doc.resolve(sel.from)
+            let table = role == "table" ? nodeSel.node : role == "row" ? rFrom.parent : rFrom.depth > 0 ? rFrom.node(-1) : rFrom.parent
+            if !isUsable(table) {
+                // No map for oversized tables: keep the node selection.
+            } else if role == "cell" || role == "header_cell" {
                 normalize = CellSelection(doc.resolve(sel.from))
             } else if role == "row" {
                 let cell = doc.resolve(sel.from + 1)
                 normalize = CellSelection.rowSelection(cell, cell)
-            } else if !allowTableNodeSelection {
+            } else if !allowTableNodeSelection, role == "table" {
                 let map = TableMap.get(nodeSel.node)
                 let start = sel.from + 1
                 let lastCell = start + map.map[map.width * map.height - 1]
