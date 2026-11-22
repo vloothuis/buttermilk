@@ -2,7 +2,7 @@ import Foundation
 
 /// A heading in a document outline.
 public struct OutlineHeading: Equatable {
-    /// The heading level, from the `level` attribute (1 when missing).
+    /// The heading level, from the `level` attribute clamped to 1...6 (1 when missing).
     public let level: Int
     public let text: String
     /// The position directly before the heading node.
@@ -40,7 +40,7 @@ public enum Outline {
         var index = 0
         doc.forEach { node, offset, _ in
             if node.type.name == type {
-                out.append(OutlineHeading(level: node.attrs["level"]?.intValue ?? 1, text: node.textContent,
+                out.append(OutlineHeading(level: max(1, min(node.attrs["level"]?.intValue ?? 1, 6)), text: node.textContent,
                                           pos: offset, end: offset + node.nodeSize, index: index))
             }
             index += 1
