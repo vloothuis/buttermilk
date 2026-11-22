@@ -32,6 +32,8 @@ public struct EditorProps {
     public var handleTripleClick: ((EditorViewing, _ pos: Int) -> Bool)?
     /// Lets a plugin override the selection a mouse drag creates. Return nil for the default.
     public var createSelectionBetween: ((EditorViewing, _ anchor: ResolvedPos, _ head: ResolvedPos) -> Selection?)?
+    /// Decorations to show for a state. The view combines the sets of all plugins.
+    public var decorations: ((EditorState) -> DecorationSet)?
     public init() {}
 }
 

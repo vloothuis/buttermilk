@@ -11,7 +11,7 @@ public final class EditorCore {
     public var renderer: DocumentRenderer {
         didSet {
             let old = rendered
-            rendered = renderer.render(state.doc)
+            rendered = renderer.render(state.doc, decorations: decorations)
             pendingChange = TextChange(range: NSRange(location: 0, length: old.length), replacement: rendered.text)
             onChange?(state, state)
         }
@@ -30,6 +30,9 @@ public final class EditorCore {
     /// Whether the last applied transaction asked to scroll the selection into view.
     public private(set) var scrollRequested = false
 
+    /// The decorations shown: those of the ``EditorProps/decorations`` props of all plugins.
+    public private(set) var decorations: DecorationSet = .empty
+
     weak var host: EditorViewing?
     private var pluginViews: [PluginView] = []
 
@@ -39,7 +42,8 @@ public final class EditorCore {
     public init(state: EditorState, theme: Theme = .standard) {
         self.state = state
         renderer = DocumentRenderer(theme: theme)
-        rendered = renderer.render(state.doc)
+        decorations = Self.decorations(for: state)
+        rendered = renderer.render(state.doc, decorations: decorations)
     }
 
     func attach(_ host: EditorViewing) {
@@ -74,13 +78,22 @@ public final class EditorCore {
         let prev = state
         state = next
         let pluginsChanged = prev.plugins.map(\.key) != next.plugins.map(\.key)
-        if prev.doc !== next.doc {
-            pendingChange = renderer.update(&rendered, to: next.doc)
+        let prevDecorations = decorations
+        decorations = Self.decorations(for: next)
+        if prev.doc !== next.doc || prevDecorations.all != decorations.all {
+            let change = renderer.update(&rendered, to: next.doc, decorations: decorations)
+            if change.range.length > 0 || change.replacement.length > 0 { pendingChange = change }
         }
         if pluginsChanged { makePluginViews() }
         if let host { pluginViews.forEach { $0.update(host, prev) } }
         onChange?(next, prev)
         onChangeObservers.forEach { $0(next, prev) }
+    }
+
+    static func decorations(for state: EditorState) -> DecorationSet {
+        let sets = state.plugins.compactMap { $0.props.decorations?(state) }.filter { !$0.isEmpty }
+        if sets.count <= 1 { return sets.first ?? .empty }
+        return DecorationSet.create(state.doc, sets.flatMap(\.all))
     }
 
     public var editable: Bool {

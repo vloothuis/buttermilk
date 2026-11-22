@@ -18,6 +18,8 @@ that Milkdown uses and adds a native TextKit view. It does not use a web view.
   - `ButtermilkTextView` is an `NSTextView` on macOS and a `UITextView` on iOS. It uses TextKit, so
     system text input, spell checking, dictation and accessibility work as usual.
   - `ButtermilkEditor` wraps it for SwiftUI.
+  - Decorations: inline, node and widget decorations in a `DecorationSet`, supplied by the
+    `decorations` plugin prop, as in `prosemirror-view`. Widget text belongs to no position.
   - `DocumentRenderer` turns a document into attributed text. It knows the basic, list and table
     schemas and the node names Milkdown uses.
 

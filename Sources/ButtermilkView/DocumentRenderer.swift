@@ -9,6 +9,8 @@ import UIKit
 public extension NSAttributedString.Key {
     /// Marks text that does not belong to the document, such as list bullets.
     static let buttermilkMarker = NSAttributedString.Key("ButtermilkMarker")
+    /// Marks the text of a widget decoration. It also carries ``buttermilkMarker``.
+    static let buttermilkWidget = NSAttributedString.Key("ButtermilkWidget")
 }
 
 /// One rendered top-level block. Positions and offsets in `map` are relative to the block.
@@ -16,6 +18,8 @@ struct RenderedBlock {
     let node: Node
     let text: NSAttributedString
     let map: BlockMap
+    /// The decorations it was rendered with, relative to the block start.
+    let decorations: [Decoration]
 }
 
 /// A rendered document: attributed text plus the position map that links it to the document.
@@ -95,26 +99,55 @@ public struct DocumentRenderer {
         #endif
     }
 
-    public func render(_ doc: Node) -> RenderedDocument {
+    public func render(_ doc: Node, decorations: DecorationSet = .empty) -> RenderedDocument {
+        let decos = Self.blockDecorations(doc, decorations)
         var blocks: [RenderedBlock] = []
-        doc.forEach { child, _, _ in blocks.append(renderBlock(child)) }
+        doc.forEach { child, _, i in blocks.append(renderBlock(child, decos[i])) }
         return RenderedDocument(blocks: blocks)
+    }
+
+    /// Splits decorations by top-level block, relative to the block start. Inline decorations
+    /// that span blocks are cut at block edges. Widgets go to the block they are inside of.
+    static func blockDecorations(_ doc: Node, _ set: DecorationSet) -> [[Decoration]] {
+        var out = Array(repeating: [Decoration](), count: doc.childCount)
+        guard !set.isEmpty else { return out }
+        var starts: [Int] = [], pos = 0
+        doc.forEach { child, _, _ in starts.append(pos); pos += child.nodeSize }
+        for deco in set.all {
+            var i = max(partition(starts) { $0 > deco.from } - 1, 0)
+            while i < starts.count, starts[i] <= deco.to {
+                let start = starts[i], end = start + doc.child(i).nodeSize
+                defer { i += 1 }
+                if deco.isWidget {
+                    if deco.from > start, deco.from < end { out[i].append(deco.shifted(by: -start)) }
+                } else if deco.isInline {
+                    let f = max(deco.from, start), t = min(deco.to, end)
+                    if f < t { out[i].append(Decoration(clipping: deco, from: f - start, to: t - start)) }
+                } else if deco.from >= start, deco.to <= end, deco.from < deco.to {
+                    out[i].append(deco.shifted(by: -start))
+                }
+            }
+        }
+        return out
     }
 
     /// Renders `doc` again, reusing every top-level block that did not change. Nodes are
     /// immutable and transactions keep untouched nodes, so identity tells what changed.
     /// Returns the change to apply to text that showed `rendered` before.
-    public func update(_ rendered: inout RenderedDocument, to doc: Node) -> TextChange {
+    public func update(_ rendered: inout RenderedDocument, to doc: Node, decorations: DecorationSet = .empty) -> TextChange {
+        let decos = Self.blockDecorations(doc, decorations)
         // Index into rendered.blocks directly: a copy would make the update below copy the array.
         let oldCount = rendered.blocks.count, count = doc.childCount
         var prefix = 0
-        while prefix < min(oldCount, count), rendered.blocks[prefix].node === doc.child(prefix) { prefix += 1 }
+        while prefix < min(oldCount, count), rendered.blocks[prefix].node === doc.child(prefix),
+              rendered.blocks[prefix].decorations == decos[prefix] { prefix += 1 }
         var suffix = 0
         while suffix < min(oldCount, count) - prefix,
-              rendered.blocks[oldCount - 1 - suffix].node === doc.child(count - 1 - suffix) {
+              rendered.blocks[oldCount - 1 - suffix].node === doc.child(count - 1 - suffix),
+              rendered.blocks[oldCount - 1 - suffix].decorations == decos[count - 1 - suffix] {
             suffix += 1
         }
-        let middle = (prefix..<(count - suffix)).map { renderBlock(doc.child($0)) }
+        let middle = (prefix..<(count - suffix)).map { renderBlock(doc.child($0), decos[$0]) }
         let start = rendered.offset(ofBlock: prefix)
         let removed = rendered.offset(ofBlock: oldCount - suffix) - start
         let replacement = NSMutableAttributedString()
@@ -123,10 +156,14 @@ public struct DocumentRenderer {
         return TextChange(range: NSRange(location: start, length: removed), replacement: replacement)
     }
 
-    func renderBlock(_ node: Node) -> RenderedBlock {
+    func renderBlock(_ node: Node, _ decorations: [Decoration] = []) -> RenderedBlock {
         let state = RenderState(theme: theme, imageLoader: imageLoader, linkSchemes: linkSchemes)
+        state.widgets = decorations.filter(\.isWidget).enumerated()
+            .sorted { ($0.element.from, $0.element.side, $0.offset) < ($1.element.from, $1.element.side, $1.offset) }
+            .map(\.element)
         state.block(node, 0, Context())
-        return RenderedBlock(node: node, text: state.out, map: state.map)
+        state.decorate(decorations.filter { !$0.isWidget })
+        return RenderedBlock(node: node, text: state.out, map: state.map, decorations: decorations)
     }
 }
 
@@ -137,6 +174,8 @@ private final class RenderState {
 
     let imageLoader: ((String) -> PlatformImage?)?
     let linkSchemes: Set<String>
+    /// Widget decorations of the block, sorted by position and side.
+    var widgets: [Decoration] = []
 
     init(theme: Theme, imageLoader: ((String) -> PlatformImage?)?, linkSchemes: Set<String>) {
         self.theme = theme; self.imageLoader = imageLoader; self.linkSchemes = linkSchemes
@@ -269,8 +308,44 @@ private final class RenderState {
         let start = out.length
         inline(node, base)
         precondition(out.length - start == node.content.size, "inline rendering must map one to one")
-        map.segments.append(.init(pos: pos + 1, offset: start, length: node.content.size))
+        insertWidgets(contentPos: pos + 1, offset: start, size: node.content.size, base)
         out.append(NSAttributedString(string: "\n", attributes: base))
+    }
+
+    /// Adds the segments of a textblock, splitting them where widgets are inserted.
+    func insertWidgets(contentPos: Int, offset start: Int, size: Int, _ base: [NSAttributedString.Key: Any]) {
+        let end = contentPos + size
+        var segPos = contentPos, segOffset = start
+        for widget in widgets where widget.from >= contentPos && widget.from <= end {
+            let at = segOffset + widget.from - segPos
+            map.segments.append(.init(pos: segPos, offset: segOffset, length: widget.from - segPos))
+            // The widget takes the attributes of the text before it, then its own.
+            var attrs = at > start ? out.attributes(at: at - 1, effectiveRange: nil)
+                : at < out.length ? out.attributes(at: at, effectiveRange: nil) : base
+            attrs[.link] = nil; attrs[.attachment] = nil
+            attrs[.buttermilkMarker] = true
+            attrs[.buttermilkWidget] = true
+            let text = NSMutableAttributedString(string: widget.widget?.string ?? "", attributes: attrs)
+            widget.widget?.enumerateAttributes(in: NSRange(location: 0, length: text.length)) { a, range, _ in
+                text.addAttributes(a, range: range)
+            }
+            out.insert(text, at: at)
+            segPos = widget.from; segOffset = at + text.length
+        }
+        map.segments.append(.init(pos: segPos, offset: segOffset, length: end - segPos))
+    }
+
+    /// Adds the attributes of inline and node decorations to the text they cover.
+    func decorate(_ decorations: [Decoration]) {
+        for deco in decorations where !deco.attributes.isEmpty {
+            for seg in map.segments where seg.pos < deco.to && seg.endPos > deco.from {
+                let f = max(seg.pos, deco.from), t = min(seg.endPos, deco.to)
+                out.addAttributes(deco.attributes, range: NSRange(location: seg.offset + f - seg.pos, length: t - f))
+            }
+            for atom in map.atoms where atom.pos >= deco.from && atom.pos < deco.to {
+                out.addAttributes(deco.attributes, range: NSRange(location: atom.offset, length: 1))
+            }
+        }
     }
 
     func inline(_ parent: Node, _ base: [NSAttributedString.Key: Any]) {

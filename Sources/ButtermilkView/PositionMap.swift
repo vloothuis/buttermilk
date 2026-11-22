@@ -3,7 +3,8 @@ import ButtermilkCore
 /// The position map of one top-level block, in coordinates relative to the block.
 ///
 /// Inline content of a textblock maps one to one: text keeps its UTF-16 length, and inline leaf
-/// nodes (images, hard breaks) render as one character. Each textblock is one ``Segment``.
+/// nodes (images, hard breaks) render as one character. Each textblock is one ``Segment``, or
+/// several when widget decorations split it. Widget text belongs to no position.
 /// Leaf blocks such as horizontal rules render as one attachment character (an ``Atom``).
 /// Everything else in the text (list markers, block separators) belongs to no position.
 /// Segments and atoms are sorted both by position and by offset.
