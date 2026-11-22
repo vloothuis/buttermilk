@@ -26,6 +26,16 @@ public struct Theme {
     /// Indentation per nesting level (lists and quotes).
     public var indent: CGFloat = 24
     public var lineHeightMultiple: CGFloat = 1.15
+    /// Colors of highlighted code tokens. Kinds without a color keep the text color.
+    public var syntaxColors: [SyntaxTokenKind: PlatformColor] = {
+        #if canImport(AppKit)
+        return [.keyword: .systemPink, .string: .systemRed, .comment: .secondaryLabelColor,
+                .number: .systemBlue, .type: .systemPurple]
+        #else
+        return [.keyword: .systemPink, .string: .systemRed, .comment: .secondaryLabel,
+                .number: .systemBlue, .type: .systemPurple]
+        #endif
+    }()
 
     public init(font: PlatformFont, codeFont: PlatformFont, textColor: PlatformColor, secondaryColor: PlatformColor,
                 linkColor: PlatformColor, codeBackground: PlatformColor, selectedCellBackground: PlatformColor) {

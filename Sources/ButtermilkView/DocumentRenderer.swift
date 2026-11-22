@@ -85,6 +85,11 @@ public struct DocumentRenderer {
     /// Leaf node types that render as a ``NodeViewAttachment``, for the view to cover with a
     /// host-supplied ``NodeView``. ``EditorCore/nodeViews`` sets it.
     public var nodeViewTypes: Set<String> = []
+    /// Colors the text of code blocks by their `language` attribute. Set it to nil to turn
+    /// highlighting off, or to a ``LanguageHighlighters`` to supply highlighters per language.
+    /// Only blocks that are rendered again (because they or their decorations changed) are
+    /// highlighted again.
+    public var highlighter: SyntaxHighlighter? = BuiltinHighlighter()
 
     public init(theme: Theme = .standard, imageLoader: ((String) -> PlatformImage?)? = nil) {
         self.theme = theme; self.imageLoader = imageLoader
@@ -162,6 +167,7 @@ public struct DocumentRenderer {
     func renderBlock(_ node: Node, _ decorations: [Decoration] = []) -> RenderedBlock {
         let state = RenderState(theme: theme, imageLoader: imageLoader, linkSchemes: linkSchemes)
         state.nodeViewTypes = nodeViewTypes
+        state.highlighter = highlighter
         state.widgets = decorations.filter(\.isWidget).enumerated()
             .sorted { ($0.element.from, $0.element.side, $0.offset) < ($1.element.from, $1.element.side, $1.offset) }
             .map(\.element)
@@ -181,6 +187,7 @@ private final class RenderState {
     /// Widget decorations of the block, sorted by position and side.
     var widgets: [Decoration] = []
     var nodeViewTypes: Set<String> = []
+    var highlighter: SyntaxHighlighter?
 
     init(theme: Theme, imageLoader: ((String) -> PlatformImage?)?, linkSchemes: Set<String>) {
         self.theme = theme; self.imageLoader = imageLoader; self.linkSchemes = linkSchemes
@@ -313,8 +320,23 @@ private final class RenderState {
         let start = out.length
         inline(node, base)
         precondition(out.length - start == node.content.size, "inline rendering must map one to one")
+        if ctx.code { highlight(node, offset: start) }
         insertWidgets(contentPos: pos + 1, offset: start, size: node.content.size, base)
         out.append(NSAttributedString(string: "\n", attributes: base))
+    }
+
+    /// Colors the code block text at `start` with the tokens of ``highlighter``.
+    func highlight(_ node: Node, offset start: Int) {
+        guard let highlighter, node.content.size > 0 else { return }
+        let language = (node.attrs["language"]?.stringValue ?? node.attrs["params"]?.stringValue ?? "")
+            .trimmingCharacters(in: .whitespaces).lowercased()
+        guard let tokens = highlighter.tokens(in: node.textContent, language: language) else { return }
+        let size = node.content.size
+        for token in tokens {
+            guard let color = theme.syntaxColors[token.kind] else { continue }
+            let from = max(0, token.range.location), to = min(size, token.range.location + token.range.length)
+            if from < to { out.addAttribute(.foregroundColor, value: color, range: NSRange(location: start + from, length: to - from)) }
+        }
     }
 
     /// Adds the segments of a textblock, splitting them where widgets are inserted.
