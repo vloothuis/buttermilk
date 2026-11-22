@@ -22,15 +22,19 @@ struct HistoryItem {
     let step: Step?
     let selection: SelectionBookmark?
     let mirrorOffset: Int?
+    /// The action name of the event this item starts. Only set on items with a selection.
+    let name: String?
 
-    init(_ map: StepMap, _ step: Step? = nil, _ selection: SelectionBookmark? = nil, _ mirrorOffset: Int? = nil) {
+    init(_ map: StepMap, _ step: Step? = nil, _ selection: SelectionBookmark? = nil, _ mirrorOffset: Int? = nil,
+         name: String? = nil) {
         self.map = map; self.step = step; self.selection = selection; self.mirrorOffset = mirrorOffset
+        self.name = selection == nil ? nil : name
     }
 
     func merge(_ other: HistoryItem) -> HistoryItem? {
         guard let step, let otherStep = other.step, other.selection == nil,
               let merged = otherStep.merge(step) else { return nil }
-        return HistoryItem(merged.getMap().invert(), merged, selection)
+        return HistoryItem(merged.getMap().invert(), merged, selection, name: name)
     }
 }
 
@@ -40,7 +44,13 @@ struct Branch {
 
     static let empty = Branch(items: [], eventCount: 0)
 
-    func popEvent(_ state: EditorState, _ preserveItems: Bool) -> (remaining: Branch, transform: Transaction, selection: SelectionBookmark)? {
+    /// The action name of the last event.
+    var lastEventName: String? {
+        guard eventCount > 0 else { return nil }
+        return items.last(where: { $0.selection != nil })?.name
+    }
+
+    func popEvent(_ state: EditorState, _ preserveItems: Bool) -> (remaining: Branch, transform: Transaction, selection: SelectionBookmark, name: String?)? {
         if eventCount == 0 { return nil }
         var end = items.count
         while true {
@@ -53,7 +63,7 @@ struct Branch {
             mapFrom = remap!.maps.count
         }
         let transform = state.tr
-        var selection: SelectionBookmark?, remaining: Branch?
+        var selection: SelectionBookmark?, remaining: Branch?, name: String?
         var addAfter: [HistoryItem] = [], addBefore: [HistoryItem] = []
 
         iterate(items, items.count, 0) { item, i in
@@ -80,15 +90,17 @@ struct Branch {
             }
             if let sel = item.selection {
                 selection = remap.map { sel.map($0.slice(mapFrom)) } ?? sel
+                name = item.name
                 remaining = Branch(items: Array(items[0..<end]) + addBefore.reversed() + addAfter, eventCount: eventCount - 1)
                 return false
             }
             return true
         }
-        return (remaining!, transform, selection!)
+        return (remaining!, transform, selection!, name)
     }
 
-    func addTransform(_ transform: Transform, _ selection: SelectionBookmark?, _ options: HistoryOptions, _ preserveItems: Bool) -> Branch {
+    func addTransform(_ transform: Transform, _ selection: SelectionBookmark?, _ options: HistoryOptions, _ preserveItems: Bool,
+                      name: String? = nil) -> Branch {
         var newItems: [HistoryItem] = []
         var eventCount = self.eventCount
         var oldItems = items
@@ -96,7 +108,7 @@ struct Branch {
         var selection = selection
         for i in 0..<transform.steps.count {
             let step = transform.steps[i].invert(transform.docs[i])
-            var item = HistoryItem(transform.mapping.maps[i], step, selection)
+            var item = HistoryItem(transform.mapping.maps[i], step, selection, name: name)
             if let merged = lastItem?.merge(item) {
                 item = merged
                 if i > 0 { newItems.removeLast() } else { oldItems.removeLast() }
@@ -150,7 +162,7 @@ struct Branch {
                 let step = rebasedTransform.steps[pos].invert(rebasedTransform.docs[pos])
                 let selection = item.selection.map { $0.map(mapping.slice(iRebased + 1, pos)) }
                 if selection != nil { eventCount += 1 }
-                rebasedItems.append(HistoryItem(map, step, selection))
+                rebasedItems.append(HistoryItem(map, step, selection, name: item.name))
             } else {
                 rebasedItems.append(HistoryItem(map))
             }
@@ -182,7 +194,7 @@ struct Branch {
                 if let step {
                     let selection = item.selection.map { $0.map(remap.slice(mapFrom)) }
                     if selection != nil { events += 1 }
-                    let newItem = HistoryItem(map!.invert(), step, selection)
+                    let newItem = HistoryItem(map!.invert(), step, selection, name: item.name)
                     if let last = result.last, let merged = last.merge(newItem) {
                         result[result.count - 1] = merged
                     } else {
@@ -259,6 +271,11 @@ public enum History {
     /// The number of redoable events.
     public static func redoDepth(_ state: EditorState) -> Int { key.getState(state)?.undone.eventCount ?? 0 }
 
+    /// The action name of the event ``undo`` would revert, such as "Typing", or nil when it has none.
+    public static func undoActionName(_ state: EditorState) -> String? { key.getState(state)?.done.lastEventName }
+    /// The action name of the event ``redo`` would reapply, or nil when it has none.
+    public static func redoActionName(_ state: EditorState) -> String? { key.getState(state)?.undone.lastEventName }
+
     /// Whether the transaction was created by undo or redo.
     public static func isHistoryTransaction(_ tr: Transaction) -> Bool { tr.getMeta(key) != nil }
 
@@ -294,7 +311,8 @@ public enum History {
                 (appended == nil && history.prevComposition != (composition ?? Int.min) &&
                  (history.prevTime < tr.time - options.newGroupDelay || !isAdjacentTo(tr, history.prevRanges)))
             let prevRanges = appended != nil ? mapRanges(history.prevRanges, tr.mapping) : rangesFor(tr.mapping.maps)
-            return HistoryState(done: history.done.addTransform(tr, newGroup ? state.selection.getBookmark() : nil, options, preserve),
+            return HistoryState(done: history.done.addTransform(tr, newGroup ? state.selection.getBookmark() : nil, options, preserve,
+                                                                name: tr.actionName ?? appended?.actionName),
                                 undone: .empty, prevRanges: prevRanges, prevTime: tr.time,
                                 prevComposition: composition ?? history.prevComposition)
         } else if let rebased = tr.getMeta("rebased") as? Int {
@@ -362,7 +380,7 @@ public enum History {
         guard let pop = (redo ? history.undone : history.done).popEvent(state, preserve) else { return nil }
         let selection = pop.selection.resolve(pop.transform.doc)
         let added = (redo ? history.done : history.undone).addTransform(
-            pop.transform, selectionFromChanges(state, pop.transform).getBookmark(), options, preserve)
+            pop.transform, selectionFromChanges(state, pop.transform).getBookmark(), options, preserve, name: pop.name)
         let newHist = HistoryState(done: redo ? added : pop.remaining, undone: redo ? pop.remaining : added,
                                    prevRanges: nil, prevTime: 0, prevComposition: -1)
         return pop.transform.setSelection(selection).setMeta(key, HistoryMeta(redo: redo, historyState: newHist))

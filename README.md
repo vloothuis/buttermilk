@@ -11,7 +11,7 @@ that Milkdown uses and adds a native TextKit view. It does not use a web view.
   - Transform: steps, step maps, mapping, `replace`, `lift`, `wrap`, `join`, marks and more.
   - State: `EditorState`, `Transaction`, selections (text, node, all), plugins and plugin keys.
   - Commands: the `prosemirror-commands` set, list commands and `baseKeymap`.
-  - Keymap, History (undo and redo), InputRules, GapCursor and KillRing (Emacs-style kill and yank).
+  - Keymap, History (undo and redo, with action names such as "Typing" for the Edit menu), InputRules, GapCursor and KillRing (Emacs-style kill and yank).
   - Search: the `prosemirror-search` query, plugin and commands (find next and previous, replace,
     replace all). Matches are inline decorations; pass `matchAttributes` to style them.
   - Tables: the `prosemirror-tables` schema, `TableMap`, `CellSelection`, commands, paste handling

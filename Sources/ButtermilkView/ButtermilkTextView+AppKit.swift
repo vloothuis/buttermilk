@@ -516,7 +516,7 @@ open class ButtermilkTextView: NSTextView, EditorViewing {
     }
 
     override open func readSelection(from pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
-        paste(from: pboard)
+        paste(from: pboard, actionName: pboard.name == .drag ? "Drop" : "Paste")
         return true
     }
 
@@ -525,12 +525,47 @@ open class ButtermilkTextView: NSTextView, EditorViewing {
 
     override open func cut(_ sender: Any?) {
         copy(sender)
-        core.deleteSelection()
+        core.deleteSelection(actionName: "Cut")
     }
 
-    private func paste(from pboard: NSPasteboard) {
+    private func paste(from pboard: NSPasteboard, actionName: String = "Paste") {
         core.paste(json: pboard.string(forType: NSPasteboard.PasteboardType(EditorCore.sliceType)),
-                   text: pboard.string(forType: .string))
+                   text: pboard.string(forType: .string), actionName: actionName)
+    }
+
+    // MARK: Undo
+
+    private lazy var editorUndoManager = EditorUndoManager(core: core)
+
+    /// Undo follows the editor history.
+    override open var undoManager: UndoManager? { editorUndoManager }
+
+    /// The Edit menu's Undo item. Undoes the last change in the editor history.
+    @objc open func undo(_ sender: Any?) { core.undo() }
+
+    /// The Edit menu's Redo item.
+    @objc open func redo(_ sender: Any?) { core.redo() }
+
+    /// Enables Undo and Redo and titles them with the action name, such as "Undo Typing".
+    override open func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        validateUndo(item) ?? super.validateUserInterfaceItem(item)
+    }
+
+    override open func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        validateUndo(item) ?? super.validateMenuItem(item)
+    }
+
+    private func validateUndo(_ item: NSValidatedUserInterfaceItem) -> Bool? {
+        switch item.action {
+        case #selector(undo(_:)):
+            (item as? NSMenuItem)?.title = core.undoMenuTitle
+            return core.canUndo
+        case #selector(redo(_:)):
+            (item as? NSMenuItem)?.title = core.redoMenuTitle
+            return core.canRedo
+        default:
+            return nil
+        }
     }
 
     override open func selectAll(_ sender: Any?) {

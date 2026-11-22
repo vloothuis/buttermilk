@@ -109,6 +109,33 @@ final class TextViewTests: XCTestCase {
         XCTAssertEqual(view.string, "\n")
     }
 
+    func testEditMenuShowsUndoActionNames() throws {
+        let view = try makeView(doc(para("")), cursor: 1, plugins: [History.plugin()])
+        let undoItem = NSMenuItem(title: "Undo", action: #selector(ButtermilkTextView.undo(_:)), keyEquivalent: "z")
+        let redoItem = NSMenuItem(title: "Redo", action: #selector(ButtermilkTextView.redo(_:)), keyEquivalent: "Z")
+        XCTAssertFalse(view.validateMenuItem(undoItem))
+        view.insertText("hi", replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(view.validateMenuItem(undoItem))
+        XCTAssertEqual(undoItem.title, "Undo Typing")
+        XCTAssertEqual(view.undoManager?.undoMenuItemTitle, "Undo Typing")
+
+        view.core.dispatch(History.closeHistory(view.state.tr))
+        view.core.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 3)))
+        view.cut(nil)
+        XCTAssertTrue(view.validateMenuItem(undoItem))
+        XCTAssertEqual(undoItem.title, "Undo Cut")
+
+        view.undo(nil)
+        XCTAssertEqual(view.string, "hi\n")
+        XCTAssertTrue(view.validateMenuItem(redoItem))
+        XCTAssertEqual(redoItem.title, "Redo Cut")
+        view.doCommand(by: #selector(NSResponder.deleteBackward(_:)))
+        XCTAssertTrue(view.validateMenuItem(undoItem))
+        XCTAssertEqual(undoItem.title, "Undo Delete")
+        XCTAssertFalse(view.validateMenuItem(redoItem))
+        XCTAssertEqual(redoItem.title, "Redo")
+    }
+
     func testCopyAndPasteKeepStructure() throws {
         let view = try makeView(doc(para("one"), para("two")))
         view.core.dispatch(view.state.tr.setSelection(TextSelection.between(view.state.doc.resolve(1), view.state.doc.resolve(9))))

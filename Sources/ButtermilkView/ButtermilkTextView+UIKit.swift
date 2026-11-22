@@ -358,7 +358,7 @@ open class ButtermilkTextView: UITextView, EditorViewing, UITextViewDelegate {
 
     override open func cut(_ sender: Any?) {
         copy(sender)
-        core.deleteSelection()
+        core.deleteSelection(actionName: "Cut")
     }
 
     override open func paste(_ sender: Any?) {
@@ -367,6 +367,13 @@ open class ButtermilkTextView: UITextView, EditorViewing, UITextViewDelegate {
             ?? pb.value(forPasteboardType: EditorCore.sliceType) as? String
         core.paste(json: json, text: pb.string)
     }
+
+    // MARK: Undo
+
+    private lazy var editorUndoManager = EditorUndoManager(core: core)
+
+    /// Undo follows the editor history, so the edit menu shows titles such as "Undo Typing".
+    override open var undoManager: UndoManager? { editorUndoManager }
 
     override open func selectAll(_ sender: Any?) {
         core.dispatch(state.tr.setSelection(AllSelection(state.doc)))

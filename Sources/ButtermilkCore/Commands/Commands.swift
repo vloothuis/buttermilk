@@ -578,10 +578,18 @@ public enum Commands {
         }
     }
 
+    /// Wraps `command` so the transactions it dispatches carry the action name `name`, unless
+    /// they already have one. The history uses the name for "Undo <name>".
+    public static func named(_ name: String, _ command: @escaping Command) -> Command {
+        return { state, dispatch, view in
+            command(state, dispatch.map { dispatch in { tr in dispatch(tr.actionName == nil ? tr.setActionName(name) : tr) } }, view)
+        }
+    }
+
     /// Toggle a mark on the selection. With an empty selection, toggle it in the stored marks.
     public static func toggleMark(_ markType: MarkType, attrs: Attrs? = nil, options: ToggleMarkOptions = .init()) -> Command {
         let enterAtoms = options.enterInlineAtoms, dropSpace = !options.includeWhitespace
-        return { state, dispatch, _ in
+        return named("Formatting") { state, dispatch, _ in
             let sel = state.selection
             let cursor = (sel as? TextSelection)?.cursor
             var ranges = sel.ranges

@@ -314,7 +314,7 @@ public enum Search {
             } else {
                 tr.setSelection(TextSelection.create(tr.doc, end))
             }
-            dispatch(tr.scrollIntoView())
+            dispatch(tr.setActionName("Replace").scrollIntoView())
             return true
         }
     }
@@ -340,7 +340,7 @@ public enum Search {
         guard let dispatch else { return true }
         let tr = state.tr
         do { for r in matches.reversed() { try replace(tr, state, s.query, r) } } catch { return false }
-        dispatch(tr.scrollIntoView())
+        dispatch(tr.setActionName("Replace All").scrollIntoView())
         return true
     }
 }

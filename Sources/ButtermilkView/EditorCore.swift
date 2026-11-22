@@ -90,7 +90,42 @@ public final class EditorCore {
 
     // MARK: State
 
+    /// The action name given to transactions dispatched without one, while a user action runs.
+    private var pendingActionName: String?
+
+    /// Runs `body`, naming the document changes it dispatches `name` unless they have a name.
+    public func performAction<T>(named name: String, _ body: () -> T) -> T {
+        let saved = pendingActionName
+        pendingActionName = saved ?? name
+        defer { pendingActionName = saved }
+        return body()
+    }
+
+    // MARK: Undo
+
+    /// The name of the change undo would revert, such as "Typing", or nil.
+    public var undoActionName: String? { History.undoActionName(state) }
+    /// The name of the change redo would reapply, or nil.
+    public var redoActionName: String? { History.redoActionName(state) }
+    /// Whether there is a change to undo.
+    public var canUndo: Bool { editable && History.undoDepth(state) > 0 }
+    /// Whether there is a change to redo.
+    public var canRedo: Bool { editable && History.redoDepth(state) > 0 }
+
+    /// Undoes the last change. Returns false when there is nothing to undo.
+    @discardableResult
+    public func undo() -> Bool { canUndo && run(History.undo) }
+    /// Redoes the last undone change. Returns false when there is nothing to redo.
+    @discardableResult
+    public func redo() -> Bool { canRedo && run(History.redo) }
+
+    /// The Edit menu title for undo, such as "Undo Typing".
+    public var undoMenuTitle: String { undoActionName.map { "Undo \($0)" } ?? "Undo" }
+    /// The Edit menu title for redo, such as "Redo Typing".
+    public var redoMenuTitle: String { redoActionName.map { "Redo \($0)" } ?? "Redo" }
+
     public func dispatch(_ tr: Transaction) {
+        if let name = pendingActionName, tr.docChanged, tr.actionName == nil { tr.setActionName(name) }
         if let dispatchTransaction { dispatchTransaction(tr) } else { apply(tr) }
     }
 
@@ -138,11 +173,25 @@ public final class EditorCore {
 
     /// Runs plugin key handlers, then the base keymap. Returns true when the key was handled.
     public func handleKey(_ key: KeyPress) -> Bool {
+        guard let name = Self.actionName(for: key) else { return handleKeyUnnamed(key) }
+        return performAction(named: name) { handleKeyUnnamed(key) }
+    }
+
+    private func handleKeyUnnamed(_ key: KeyPress) -> Bool {
         guard let host else { return false }
         for handler in someProp({ $0.handleKeyDown }) where handler(host, key) { return true }
         guard editable else { return false }
         if key.modifiers.isEmpty, enterNodeView(key.key) { return true }
         return Self.baseHandler(host, key)
+    }
+
+    /// The action name for changes made by a key without its own name.
+    static func actionName(for key: KeyPress) -> String? {
+        switch key.key {
+        case "Backspace", "Delete": "Delete"
+        case "Enter", "Tab": "Typing"
+        default: nil
+        }
     }
 
     /// Moves the cursor into an ``EditableNodeView`` next to the cursor's textblock when an
@@ -195,6 +244,10 @@ public final class EditorCore {
     /// Inserts typed text over the document range `from..<to`, giving input handlers (such as
     /// input rules) the first chance.
     public func insertText(_ text: String, from: Int, to: Int) {
+        performAction(named: "Typing") { insertTextUnnamed(text, from: from, to: to) }
+    }
+
+    private func insertTextUnnamed(_ text: String, from: Int, to: Int) {
         guard let host, editable else { return }
         for handler in someProp({ $0.handleTextInput }) where handler(host, from, to, text) { return }
         guard var tr = try? state.tr.insertText(text, from, to) else { return }
@@ -205,23 +258,24 @@ public final class EditorCore {
     /// Inserts typed text over the selection.
     public func insertText(_ text: String) {
         let sel = state.selection
-        if !(sel is TextSelection), !sel.isEmpty {
-            // Typing over a node or cell selection replaces it.
-            guard let tr = try? state.tr.deleteSelection() else { return }
-            dispatch(tr)
+        performAction(named: "Typing") {
+            if !(sel is TextSelection), !sel.isEmpty, let tr = try? state.tr.deleteSelection() {
+                // Typing over a node or cell selection replaces it.
+                dispatch(tr)
+            }
+            insertText(text, from: state.selection.from, to: state.selection.to)
         }
-        insertText(text, from: state.selection.from, to: state.selection.to)
     }
 
     /// Deletes the document range, used when the platform asks for a plain character delete.
     public func delete(from: Int, to: Int) {
         guard editable, from < to, let tr = try? state.tr.delete(from, to) else { return }
-        dispatch(tr.scrollIntoView())
+        dispatch(tr.setActionName("Delete").scrollIntoView())
     }
 
-    public func deleteSelection() {
+    public func deleteSelection(actionName: String = "Delete") {
         guard editable, !state.selection.isEmpty, let tr = try? state.tr.deleteSelection() else { return }
-        dispatch(tr.scrollIntoView())
+        dispatch(tr.setActionName(actionName).scrollIntoView())
     }
 
     // MARK: Clipboard
@@ -237,7 +291,11 @@ public final class EditorCore {
     }
 
     /// Pastes a slice from JSON, or plain text split into paragraphs.
-    public func paste(json: String?, text: String?) {
+    public func paste(json: String?, text: String?, actionName: String = "Paste") {
+        performAction(named: actionName) { pasteUnnamed(json: json, text: text) }
+    }
+
+    private func pasteUnnamed(json: String?, text: String?) {
         guard editable else { return }
         var slice: Slice?
         if let json, let data = json.data(using: .utf8), let value = try? JSON(data: data) {

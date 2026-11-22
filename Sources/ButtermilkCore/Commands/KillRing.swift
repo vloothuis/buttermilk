@@ -84,7 +84,7 @@ public enum KillRing {
             if let dispatch {
                 let slice = state.doc.slice(from, to, includeParents: true)
                 guard let tr = try? state.tr.delete(from, to) else { return false }
-                dispatch(tr.setMeta(key, Meta.kill(slice, prepend: prepend)).scrollIntoView())
+                dispatch(tr.setMeta(key, Meta.kill(slice, prepend: prepend)).setActionName("Kill").scrollIntoView())
             }
             return true
         }
@@ -157,7 +157,7 @@ public enum KillRing {
             let tr = state.tr
             guard (try? tr.replaceRange(from, to, trimmed(ring.entries[index]))) != nil else { return false }
             let start = tr.mapping.map(from, assoc: -1), end = tr.selection.to
-            dispatch(tr.setMeta(key, Meta.yank(from: start, to: end, index: index)).scrollIntoView())
+            dispatch(tr.setMeta(key, Meta.yank(from: start, to: end, index: index)).setActionName("Yank").scrollIntoView())
         }
         return true
     }

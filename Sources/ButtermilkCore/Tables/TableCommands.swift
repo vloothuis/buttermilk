@@ -54,7 +54,7 @@ public enum TableCommands {
     }
 
     /// Add a column before the column with the selection.
-    public static let addColumnBefore: Command = { state, dispatch, _ in
+    public static let addColumnBefore: Command = Commands.named("Insert Column") { state, dispatch, _ in
         guard Tables.isInTable(state) else { return false }
         if let dispatch, let rect = selectedRect(state) {
             return build { dispatch(try addColumn(state.tr, rect, rect.left)) }
@@ -63,7 +63,7 @@ public enum TableCommands {
     }
 
     /// Add a column after the column with the selection.
-    public static let addColumnAfter: Command = { state, dispatch, _ in
+    public static let addColumnAfter: Command = Commands.named("Insert Column") { state, dispatch, _ in
         guard Tables.isInTable(state) else { return false }
         if let dispatch, let rect = selectedRect(state) {
             return build { dispatch(try addColumn(state.tr, rect, rect.right)) }
@@ -92,7 +92,7 @@ public enum TableCommands {
     }
 
     /// Remove the selected columns. Fails when every column is selected.
-    public static let deleteColumn: Command = { state, dispatch, _ in
+    public static let deleteColumn: Command = Commands.named("Delete Column") { state, dispatch, _ in
         guard Tables.isInTable(state) else { return false }
         guard let dispatch, var rect = selectedRect(state) else { return true }
         if rect.left == 0 && rect.right == rect.map.width { return false }
@@ -148,7 +148,7 @@ public enum TableCommands {
     }
 
     /// Add a row before the selection.
-    public static let addRowBefore: Command = { state, dispatch, _ in
+    public static let addRowBefore: Command = Commands.named("Insert Row") { state, dispatch, _ in
         guard Tables.isInTable(state) else { return false }
         if let dispatch, let rect = selectedRect(state) {
             return build { dispatch(try addRow(state.tr, rect, rect.top)) }
@@ -157,7 +157,7 @@ public enum TableCommands {
     }
 
     /// Add a row after the selection.
-    public static let addRowAfter: Command = { state, dispatch, _ in
+    public static let addRowAfter: Command = Commands.named("Insert Row") { state, dispatch, _ in
         guard Tables.isInTable(state) else { return false }
         if let dispatch, let rect = selectedRect(state) {
             return build { dispatch(try addRow(state.tr, rect, rect.bottom)) }
@@ -198,7 +198,7 @@ public enum TableCommands {
     }
 
     /// Remove the selected rows. Fails when every row is selected.
-    public static let deleteRow: Command = { state, dispatch, _ in
+    public static let deleteRow: Command = Commands.named("Delete Row") { state, dispatch, _ in
         guard Tables.isInTable(state) else { return false }
         guard let dispatch, var rect = selectedRect(state) else { return true }
         if rect.top == 0 && rect.bottom == rect.map.height { return false }
@@ -244,7 +244,7 @@ public enum TableCommands {
     }
 
     /// Merge the selected cells into one. Only available when their outline is a rectangle.
-    public static let mergeCells: Command = { state, dispatch, _ in
+    public static let mergeCells: Command = Commands.named("Merge Cells") { state, dispatch, _ in
         guard let sel = state.selection as? CellSelection, sel.anchorCell.pos != sel.headCell.pos,
               let rect = selectedRect(state) else { return false }
         let map = rect.map
@@ -291,7 +291,7 @@ public enum TableCommands {
 
     /// Split a selected cell, using `cellType` to pick the type of each resulting cell.
     public static func splitCell(cellType: @escaping (_ node: Node, _ row: Int, _ col: Int) -> NodeType) -> Command {
-        return { state, dispatch, _ in
+        return Commands.named("Split Cell") { state, dispatch, _ in
             let sel = state.selection
             let cellNode: Node, cellPos: Int
             if let cells = sel as? CellSelection {
@@ -347,7 +347,7 @@ public enum TableCommands {
 
     /// Set attribute `name` to `value` on the selected cells. Fails when the cell already has it.
     public static func setCellAttr(_ name: String, _ value: JSON) -> Command {
-        return { state, dispatch, _ in
+        return Commands.named("Set Cell Attribute") { state, dispatch, _ in
             guard Tables.isInTable(state), let cell = Tables.selectionCell(state), let node = cell.nodeAfter else { return false }
             if (node.attrs[name] ?? .null) == value { return false }
             guard let dispatch else { return true }
@@ -413,7 +413,7 @@ public enum TableCommands {
     /// `useDeprecatedLogic`, the selected rows, columns or cells are toggled.
     public static func toggleHeader(_ type: HeaderType, useDeprecatedLogic: Bool = false) -> Command {
         if useDeprecatedLogic { return deprecatedToggleHeader(type) }
-        return { state, dispatch, _ in
+        return Commands.named("Toggle Header") { state, dispatch, _ in
             guard Tables.isInTable(state) else { return false }
             guard let dispatch, let rect = selectedRect(state) else { return true }
             let types = Tables.nodeTypes(state.schema)
@@ -481,7 +481,7 @@ public enum TableCommands {
     }
 
     /// Delete the table around the selection.
-    public static let deleteTable: Command = { state, dispatch, _ in
+    public static let deleteTable: Command = Commands.named("Delete Table") { state, dispatch, _ in
         let pos = state.selection.resolvedAnchor
         var d = pos.depth
         while d > 0 {
@@ -495,7 +495,7 @@ public enum TableCommands {
     }
 
     /// Clear the content of the selected cells.
-    public static let deleteCellSelection: Command = { state, dispatch, _ in
+    public static let deleteCellSelection: Command = Commands.named("Delete") { state, dispatch, _ in
         guard let sel = state.selection as? CellSelection else { return false }
         guard let dispatch else { return true }
         guard let base = Tables.nodeTypes(state.schema)["cell"]?.createAndFill()?.content else { return true }
@@ -514,7 +514,7 @@ public enum TableCommands {
 
     /// Move row `from` to index `to`. `pos` picks the table (default: the selection start).
     public static func moveTableRow(from: Int, to: Int, select: Bool = true, pos: Int? = nil) -> Command {
-        return { state, dispatch, _ in
+        return Commands.named("Move Row") { state, dispatch, _ in
             let tr = state.tr
             guard (try? TableMoves.move(tr, rows: true, from, to, select, pos ?? state.selection.from)) == true else { return false }
             dispatch?(tr)
@@ -524,7 +524,7 @@ public enum TableCommands {
 
     /// Move column `from` to index `to`. `pos` picks the table (default: the selection start).
     public static func moveTableColumn(from: Int, to: Int, select: Bool = true, pos: Int? = nil) -> Command {
-        return { state, dispatch, _ in
+        return Commands.named("Move Column") { state, dispatch, _ in
             let tr = state.tr
             guard (try? TableMoves.move(tr, rows: false, from, to, select, pos ?? state.selection.from)) == true else { return false }
             dispatch?(tr)

@@ -131,6 +131,7 @@ public enum InputRules {
             }
             guard let tr = rule.handler(state, match, startPos, to, text) else { continue }
             if rule.undoable { tr.setMeta(key, InputRuleUndo(transform: tr, from: from, to: to, text: text)) }
+            if tr.actionName == nil { tr.setActionName("Typing") }
             view.dispatch(tr)
             return true
         }

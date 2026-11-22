@@ -28,6 +28,8 @@ public typealias Command = (_ state: EditorState, _ dispatch: ((Transaction) -> 
 public protocol MetaKey { var metaKey: String { get } }
 extension String: MetaKey { public var metaKey: String { self } }
 
+let actionNameKey = "actionName"
+
 /// A transform that also tracks the selection, stored marks, and metadata.
 public final class Transaction: Transform {
     private struct Updated: OptionSet {
@@ -169,6 +171,14 @@ public final class Transaction: Transform {
     public func getMeta(_ key: MetaKey) -> Any? { meta[key.metaKey] }
 
     public func getMeta<T>(_ key: MetaKey, as: T.Type) -> T? { meta[key.metaKey] as? T }
+
+    /// The name of the user action this transaction performs, such as "Typing" or "Paste".
+    /// The history records it so the Edit menu can show "Undo Typing".
+    public var actionName: String? { meta[actionNameKey] as? String }
+
+    /// Sets ``actionName``.
+    @discardableResult
+    public func setActionName(_ name: String?) -> Self { setMeta(actionNameKey, name) }
 
     /// True when the transaction has no metadata.
     public var isGeneric: Bool { meta.isEmpty }
