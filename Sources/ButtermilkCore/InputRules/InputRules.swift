@@ -198,9 +198,32 @@ public enum InputRules {
 
     public static let emDash = InputRule("--$", replacement: "—", inCodeMark: false)
     public static let ellipsis = InputRule("\\.\\.\\.$", replacement: "…", inCodeMark: false)
-    public static let openDoubleQuote = InputRule("(?:^|[\\s\\{\\[\\(\\<'\"\\u2018\\u201C])(\")$", replacement: "“", inCodeMark: false)
-    public static let closeDoubleQuote = InputRule("\"$", replacement: "”", inCodeMark: false)
-    public static let openSingleQuote = InputRule("(?:^|[\\s\\{\\[\\(\\<'\"\\u2018\\u201C])(')$", replacement: "‘", inCodeMark: false)
-    public static let closeSingleQuote = InputRule("'$", replacement: "’", inCodeMark: false)
-    public static let smartQuotes = [openDoubleQuote, closeDoubleQuote, openSingleQuote, closeSingleQuote]
+    public static let openDoubleQuote = smartQuotes(QuoteCharacters())[0]
+    public static let closeDoubleQuote = smartQuotes(QuoteCharacters())[1]
+    public static let openSingleQuote = smartQuotes(QuoteCharacters())[2]
+    public static let closeSingleQuote = smartQuotes(QuoteCharacters())[3]
+    /// The four quote rules with English curly quotes.
+    public static let smartQuotes = smartQuotes(QuoteCharacters())
+
+    /// The characters that the smart quote rules insert.
+    public struct QuoteCharacters {
+        public var openDouble: String, closeDouble: String, openSingle: String, closeSingle: String
+        public init(openDouble: String = "“", closeDouble: String = "”", openSingle: String = "‘", closeSingle: String = "’") {
+            self.openDouble = openDouble; self.closeDouble = closeDouble
+            self.openSingle = openSingle; self.closeSingle = closeSingle
+        }
+    }
+
+    /// The rules openDoubleQuote, closeDoubleQuote, openSingleQuote and closeSingleQuote, in that
+    /// order, with the given characters. A quote opens at the start of a textblock or after
+    /// whitespace, an opening bracket or another quote.
+    public static func smartQuotes(_ q: QuoteCharacters) -> [InputRule] {
+        let before = NSRegularExpression.escapedPattern(for: "{[(<'\"" + q.openSingle + q.openDouble)
+        return [
+            InputRule("(?:^|[\\s\(before)])(\")$", replacement: q.openDouble, inCodeMark: false),
+            InputRule("\"$", replacement: q.closeDouble, inCodeMark: false),
+            InputRule("(?:^|[\\s\(before)])(')$", replacement: q.openSingle, inCodeMark: false),
+            InputRule("'$", replacement: q.closeSingle, inCodeMark: false),
+        ]
+    }
 }

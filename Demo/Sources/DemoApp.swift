@@ -55,8 +55,8 @@ enum Demo {
             InputRules.wrappingRule("^\\s*([-+*])\\s$", n["bullet_list"]!),
             InputRules.wrappingRule("^(\\d+)\\.\\s$", n["ordered_list"]!, attrs: { ["order": .number(Double($0[1]!) ?? 1)] }),
             InputRules.textblockTypeRule("^```$", n["code_block"]!),
-            InputRules.ellipsis,
-        ]
+            InputRules.ellipsis, InputRules.emDash,
+        ] + InputRules.smartQuotes
         let item = n["list_item"]!
         let keys: [String: Command] = [
             "Mod-z": History.undo, "Shift-Mod-z": History.redo, "Mod-y": History.redo,
