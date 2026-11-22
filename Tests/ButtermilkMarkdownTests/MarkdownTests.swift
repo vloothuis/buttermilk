@@ -143,4 +143,18 @@ final class MarkdownSafetyTests: XCTestCase {
         }
     }
 
+    func testNestedOrderedListsKeepStart() throws {
+        let text = "3. a\n\n   7. b\n\n      * c\n\n        12. d\n\n            0. e\n\n   8. f\n4. g\n"
+        let doc = try md.parse(text)
+        var starts: [Int] = []
+        func walk(_ n: ButtermilkCore.Node) {
+            if n.type.name == "ordered_list" { starts.append(n.attrs["order"]?.intValue ?? -1) }
+            n.forEach { c, _, _ in walk(c) }
+        }
+        walk(doc)
+        XCTAssertEqual(starts, [3, 7, 12, 0])
+        let again = try md.parse(md.serialize(doc))
+        XCTAssertEqual(md.serialize(again), md.serialize(doc))
+        XCTAssertTrue(again.eq(doc))
+    }
 }
