@@ -1,6 +1,9 @@
 /// Table support: schema nodes, helpers, the table fixer and the table editing plugin.
 /// Port of prosemirror-tables. Column resizing and mouse cell selection are view concerns.
 public enum Tables {
+    /// The largest colspan or rowspan a cell may have.
+    public static let maxCellSpan = ButtermilkCore.maxCellSpan
+
     // MARK: Schema
 
     /// Extra cell attribute, added to both cell types by ``nodes(cellContent:cellAttributes:tableGroup:)``.

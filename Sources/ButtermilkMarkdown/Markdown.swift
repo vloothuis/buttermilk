@@ -182,7 +182,7 @@ public struct MarkdownConverter {
         case "paragraph":
             return [Paragraph(inlineMarkup(node))]
         case "heading":
-            return [Heading(level: node.attrs["level"]?.intValue ?? 1, inlineMarkup(node))]
+            return [Heading(level: min(max(node.attrs["level"]?.intValue ?? 1, 1), 6), inlineMarkup(node))]
         case "blockquote":
             return [BlockQuote(childBlocks(node))]
         case "code_block":
@@ -226,7 +226,7 @@ public struct MarkdownConverter {
                     inline += inlineMarkup(block)
                 }
                 var c = Markdown.Table.Cell(inline)
-                c.colspan = UInt(max(cell.attrs["colspan"]?.intValue ?? 1, 1))
+                c.colspan = UInt(min(max(cell.attrs["colspan"]?.intValue ?? 1, 1), Tables.maxCellSpan))
                 cells.append(c)
                 // Covered columns get empty cells with a span of 0.
                 for _ in 1..<Int(c.colspan) { var gap = Markdown.Table.Cell([]); gap.colspan = 0; cells.append(gap) }

@@ -92,3 +92,11 @@ final class MarkdownTests: XCTestCase {
         XCTAssertEqual(doc.child(0).type.name, "paragraph")
     }
 }
+
+final class MarkdownSafetyTests: XCTestCase {
+    func testOutOfRangeAttributesAreClamped() throws {
+        let s = MarkdownSchema.schema
+        let doc = try s.node("doc", nil, [s.node("heading", ["level": 99], [s.text("x")])])
+        XCTAssertEqual(MarkdownConverter().serialize(doc), "###### x\n")
+    }
+}
