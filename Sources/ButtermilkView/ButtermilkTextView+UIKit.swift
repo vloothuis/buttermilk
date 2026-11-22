@@ -1,0 +1,230 @@
+#if canImport(UIKit) && !os(watchOS)
+import ButtermilkCore
+import UIKit
+
+/// A native iOS editor view. It is a `UITextView`, so it gets the system keyboard, autocorrect,
+/// dictation, selection handles and accessibility, while the document lives in an ``EditorState``.
+///
+/// Edits never change the text storage directly: they become transactions, and the storage is
+/// rendered again from the new document.
+open class ButtermilkTextView: UITextView, EditorViewing, UITextViewDelegate {
+    public let core: EditorCore
+    private var isRendering = false
+    private var compositionRange: (from: Int, to: Int)?
+
+    public var state: EditorState { core.state }
+    public var composing: Bool { compositionRange != nil }
+
+    /// Receives the delegate calls the view does not use itself.
+    public weak var forwardingDelegate: UITextViewDelegate?
+
+    public init(state: EditorState, theme: Theme = .standard, frame: CGRect = .zero) {
+        core = EditorCore(state: state, theme: theme)
+        let storage = NSTextStorage()
+        let layout = NSLayoutManager()
+        storage.addLayoutManager(layout)
+        let container = NSTextContainer(size: CGSize(width: frame.width, height: .greatestFiniteMagnitude))
+        container.widthTracksTextView = true
+        layout.addTextContainer(container)
+        super.init(frame: frame, textContainer: container)
+        delegate = self
+        smartQuotesType = .no
+        smartDashesType = .no
+        smartInsertDeleteType = .no
+        autocorrectionType = .default
+        textContainerInset = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+        core.attach(self)
+        core.onChange = { [weak self] next, prev in self?.stateChanged(next, prev) }
+        renderDocument()
+        renderSelection()
+    }
+
+    @available(*, unavailable)
+    public required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    // MARK: EditorViewing
+
+    public func dispatch(_ tr: Transaction) { core.dispatch(tr) }
+
+    public func endOfTextblock(_ dir: TextDirection, _ state: EditorState) -> Bool? {
+        guard state.selection is TextSelection else { return nil }
+        let head = state.selection.resolvedHead
+        guard head.parent.isTextblock else { return nil }
+        let map = core.rendered.map
+        let offset = map.offset(for: head.pos)
+        let start = map.offset(for: head.start()), end = map.offset(for: head.end())
+        switch dir {
+        case .left, .backward: return offset == start
+        case .right, .forward: return offset == end
+        case .up, .down:
+            let length = (text as NSString).length
+            guard length > 0 else { return true }
+            let glyph = layoutManager.glyphIndexForCharacter(at: min(offset, length - 1))
+            var lineRange = NSRange()
+            layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: &lineRange)
+            let chars = layoutManager.characterRange(forGlyphRange: lineRange, actualGlyphRange: nil)
+            return dir == .up ? chars.location <= start : NSMaxRange(chars) >= end
+        }
+    }
+
+    // MARK: Rendering
+
+    private func stateChanged(_ next: EditorState, _ prev: EditorState) {
+        if next.doc !== prev.doc { renderDocument() }
+        renderSelection()
+    }
+
+    private func renderDocument() {
+        isRendering = true
+        defer { isRendering = false }
+        textStorage.beginEditing()
+        textStorage.setAttributedString(core.rendered.text)
+        textStorage.endEditing()
+        typingAttributes = [.font: core.renderer.theme.font, .foregroundColor: core.renderer.theme.textColor]
+    }
+
+    private func renderSelection() {
+        isRendering = true
+        defer { isRendering = false }
+        let map = core.rendered.map, sel = state.selection
+        let length = (text as NSString).length
+        func clamp(_ i: Int) -> Int { min(max(i, 0), length) }
+        let from = clamp(map.offset(for: sel.from)), to = clamp(map.offset(for: sel.to, bias: -1))
+        var range = NSRange(location: from, length: max(to - from, 0))
+        if sel is NodeSelection, to <= from { range.length = min(1, length - from) }
+        selectedRange = range
+        if core.scrollRequested { scrollRangeToVisible(range) }
+    }
+
+    // MARK: Delegate
+
+    public func textViewDidChangeSelection(_ textView: UITextView) {
+        defer { forwardingDelegate?.textViewDidChangeSelection?(textView) }
+        guard !isRendering, !composing, markedTextRange == nil else { return }
+        let map = core.rendered.map, doc = state.doc, range = selectedRange
+        var anchor = map.position(for: range.location)
+        var head = range.length == 0 ? anchor : map.position(for: NSMaxRange(range), bias: -1)
+        anchor = min(max(anchor, 0), doc.content.size); head = min(max(head, anchor), doc.content.size)
+        if state.selection.from == anchor, state.selection.to == head { return }
+        let resolvedAnchor = doc.resolve(anchor), resolvedHead = doc.resolve(head)
+        var selection: Selection?
+        for f in core.someProp({ $0.createSelectionBetween }) {
+            if let s = f(self, resolvedAnchor, resolvedHead) { selection = s; break }
+        }
+        if selection == nil, range.length <= 1, let atom = map.atoms.first(where: { $0.offset == range.location }),
+           let node = doc.nodeAt(atom.pos), NodeSelection.isSelectable(node) {
+            selection = NodeSelection.create(doc, atom.pos)
+        }
+        core.dispatch(state.tr.setSelection(selection ?? TextSelection.between(resolvedAnchor, resolvedHead)))
+    }
+
+    public func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+        if isRendering || markedTextRange != nil { return true }
+        let map = core.rendered.map
+        let from = map.position(for: range.location)
+        let to = range.length == 0 ? from : max(from, map.position(for: NSMaxRange(range), bias: -1))
+        if text == "\n" {
+            syncSelection(from, to)
+            _ = core.handleKey(KeyPress("Enter"))
+        } else if text.isEmpty {
+            let sel = state.selection
+            if range.length > 0, sel.from == from, sel.to == to {
+                if !core.handleKey(KeyPress("Backspace")) { core.deleteSelection() }
+            } else if range.length > 0 {
+                syncSelection(to, to)
+                if !core.handleKey(KeyPress("Backspace")) { core.delete(from: from, to: to) }
+            }
+        } else {
+            core.insertText(text, from: from, to: to)
+        }
+        return false
+    }
+
+    private func syncSelection(_ from: Int, _ to: Int) {
+        let sel = state.selection
+        guard sel.from != from || sel.to != to else { return }
+        let doc = state.doc
+        core.dispatch(state.tr.setSelection(TextSelection.between(doc.resolve(from), doc.resolve(to))))
+    }
+
+    // MARK: Composition
+
+    override open func setMarkedText(_ markedText: String?, selectedRange: NSRange) {
+        if compositionRange == nil { compositionRange = (state.selection.from, state.selection.to) }
+        super.setMarkedText(markedText, selectedRange: selectedRange)
+    }
+
+    override open func unmarkText() {
+        guard let comp = compositionRange else { super.unmarkText(); return }
+        let marked = markedTextRange.map { text(in: $0) ?? "" } ?? ""
+        isRendering = true
+        super.unmarkText()
+        isRendering = false
+        compositionRange = nil
+        renderDocument()
+        if !marked.isEmpty { core.insertText(marked, from: comp.from, to: comp.to) } else { renderSelection() }
+    }
+
+    // MARK: Hardware keys
+
+    override open func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        for press in presses {
+            guard let key = press.key, let keyPress = Self.keyPress(key), markedTextRange == nil else { continue }
+            // Plain characters go through text input so autocorrect and input rules see them.
+            if keyPress.modifiers.isSubset(of: .shift), keyPress.key.count == 1 { continue }
+            if core.handleKey(keyPress) { return }
+        }
+        super.pressesBegan(presses, with: event)
+    }
+
+    static func keyPress(_ key: UIKey) -> KeyPress? {
+        var mods: KeyPress.Modifiers = []
+        if key.modifierFlags.contains(.shift) { mods.insert(.shift) }
+        if key.modifierFlags.contains(.control) { mods.insert(.control) }
+        if key.modifierFlags.contains(.alternate) { mods.insert(.option) }
+        if key.modifierFlags.contains(.command) { mods.insert(.command) }
+        let name: String
+        switch key.keyCode {
+        case .keyboardReturnOrEnter, .keypadEnter: name = "Enter"
+        case .keyboardDeleteOrBackspace: name = "Backspace"
+        case .keyboardDeleteForward: name = "Delete"
+        case .keyboardTab: name = "Tab"
+        case .keyboardLeftArrow: name = "ArrowLeft"
+        case .keyboardRightArrow: name = "ArrowRight"
+        case .keyboardUpArrow: name = "ArrowUp"
+        case .keyboardDownArrow: name = "ArrowDown"
+        case .keyboardEscape: name = "Escape"
+        case .keyboardHome: name = "Home"
+        case .keyboardEnd: name = "End"
+        default:
+            guard !key.charactersIgnoringModifiers.isEmpty else { return nil }
+            name = key.charactersIgnoringModifiers
+        }
+        // Arrow keys and editing keys without modifiers are left to UITextView unless a keymap wants them.
+        return KeyPress(name, modifiers: mods, baseKey: key.charactersIgnoringModifiers)
+    }
+
+    // MARK: Clipboard
+
+    override open func copy(_ sender: Any?) {
+        guard let content = core.copyContent() else { return }
+        UIPasteboard.general.items = [[EditorCore.sliceType: content.json, "public.utf8-plain-text": content.text]]
+    }
+
+    override open func cut(_ sender: Any?) {
+        copy(sender)
+        core.deleteSelection()
+    }
+
+    override open func paste(_ sender: Any?) {
+        let pb = UIPasteboard.general
+        let json = pb.data(forPasteboardType: EditorCore.sliceType).flatMap { String(data: $0, encoding: .utf8) }
+            ?? pb.value(forPasteboardType: EditorCore.sliceType) as? String
+        core.paste(json: json, text: pb.string)
+    }
+
+    override open func selectAll(_ sender: Any?) {
+        core.dispatch(state.tr.setSelection(AllSelection(state.doc)))
+    }
+}
+#endif
