@@ -1,0 +1,29 @@
+name: ButtermilkDemo
+options:
+  bundleIdPrefix: dev.buttermilk
+  deploymentTarget:
+    macOS: "13.0"
+    iOS: "16.0"
+packages:
+  Buttermilk:
+    path: ..
+targets:
+  ButtermilkDemo:
+    type: application
+    supportedDestinations: [macOS, iOS]
+    sources: [Sources]
+    dependencies:
+      - package: Buttermilk
+        product: ButtermilkView
+      - package: Buttermilk
+        product: ButtermilkMarkdown
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.buttermilk.demo
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        ENABLE_HARDENED_RUNTIME: NO
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
