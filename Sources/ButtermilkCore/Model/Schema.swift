@@ -398,6 +398,13 @@ public final class Schema {
         return t
     }
 
-    public func nodeFromJSON(_ json: JSON) throws -> Node { try Node.fromJSON(self, json) }
+    /// Deserialise a node. Like ProseMirror, this does not check content against the schema
+    /// unless `validate` is true. Pass `true` for untrusted input: operations on a node with
+    /// invalid content can trap.
+    public func nodeFromJSON(_ json: JSON, validate: Bool = false) throws -> Node {
+        let node = try Node.fromJSON(self, json)
+        if validate { try node.check() }
+        return node
+    }
     public func markFromJSON(_ json: JSON) throws -> Mark { try Mark.fromJSON(self, json) }
 }

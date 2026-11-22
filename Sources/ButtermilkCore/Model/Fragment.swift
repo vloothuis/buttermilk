@@ -199,7 +199,7 @@ public struct Fragment: Equatable, CustomStringConvertible, Sequence {
     public static func fromJSON(_ schema: Schema, _ value: JSON?) throws -> Fragment {
         guard let value, !value.isNull else { return .empty }
         guard let arr = value.arrayValue else { throw ProseError.range("Invalid input for Fragment.fromJSON") }
-        return fromArray(try arr.map(schema.nodeFromJSON))
+        return fromArray(try arr.map { try schema.nodeFromJSON($0) })
     }
 
     /// Build a fragment from an array of nodes, joining adjacent text nodes with the same marks.

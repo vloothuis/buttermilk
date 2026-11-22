@@ -60,6 +60,14 @@ public enum StepRegistry {
 
 private func num(_ json: JSON, _ key: String) -> Int? { json[key]?.intValue }
 
+/// True when the positions are ordered and lie inside the document. Steps can come from
+/// untrusted JSON, so `apply` checks this instead of trapping.
+func positionsValid(_ doc: Node, _ positions: Int...) -> Bool {
+    var last = 0
+    for p in positions { if p < last || p > doc.content.size { return false }; last = p }
+    return true
+}
+
 // MARK: - Replace steps
 
 public final class ReplaceStep: Step {
@@ -73,6 +81,7 @@ public final class ReplaceStep: Step {
     }
 
     public func apply(_ doc: Node) -> StepResult {
+        guard positionsValid(doc, from, to) else { return .fail("Step position out of range") }
         if structure && contentBetween(doc, from, to) { return .fail("Structure replace would overwrite content") }
         return .fromReplace(doc, from, to, slice)
     }
@@ -133,6 +142,7 @@ public final class ReplaceAroundStep: Step {
     }
 
     public func apply(_ doc: Node) -> StepResult {
+        guard positionsValid(doc, from, gapFrom, gapTo, to) else { return .fail("Step position out of range") }
         if structure && (contentBetween(doc, from, gapFrom) || contentBetween(doc, gapTo, to)) {
             return .fail("Structure gap-replace would overwrite content")
         }
@@ -220,6 +230,7 @@ public final class AddMarkStep: Step {
     public init(_ from: Int, _ to: Int, _ mark: Mark) { self.from = from; self.to = to; self.mark = mark }
 
     public func apply(_ doc: Node) -> StepResult {
+        guard positionsValid(doc, from, to) else { return .fail("Step position out of range") }
         let oldSlice = doc.slice(from, to), rFrom = doc.resolve(from)
         let parent = rFrom.node(rFrom.sharedDepth(to))
         let content = mapFragment(oldSlice.content, parent) { node, parent, _ in
@@ -276,6 +287,7 @@ public final class RemoveMarkStep: Step {
     public init(_ from: Int, _ to: Int, _ mark: Mark) { self.from = from; self.to = to; self.mark = mark }
 
     public func apply(_ doc: Node) -> StepResult {
+        guard positionsValid(doc, from, to) else { return .fail("Step position out of range") }
         let oldSlice = doc.slice(from, to)
         let content = mapFragment(oldSlice.content, doc) { node, _, _ in node.mark(self.mark.removeFromSet(node.marks)) }
         return .fromReplace(doc, from, to, Slice(content, openStart: oldSlice.openStart, openEnd: oldSlice.openEnd))
@@ -376,7 +388,7 @@ public final class AddNodeMarkStep: Step {
     public init(_ pos: Int, _ mark: Mark) { self.pos = pos; self.mark = mark }
 
     public func apply(_ doc: Node) -> StepResult {
-        guard let node = doc.nodeAt(pos) else { return .fail("No node at mark step's position") }
+        guard positionsValid(doc, pos), let node = doc.nodeAt(pos) else { return .fail("No node at mark step's position") }
         let updated = Node(type: node.type, attrs: node.attrs, content: .empty, marks: mark.addToSet(node.marks))
         return .fromReplace(doc, pos, pos + 1, Slice(Fragment(updated), openStart: 0, openEnd: node.isLeaf ? 0 : 1))
     }
@@ -415,7 +427,7 @@ public final class RemoveNodeMarkStep: Step {
     public init(_ pos: Int, _ mark: Mark) { self.pos = pos; self.mark = mark }
 
     public func apply(_ doc: Node) -> StepResult {
-        guard let node = doc.nodeAt(pos) else { return .fail("No node at mark step's position") }
+        guard positionsValid(doc, pos), let node = doc.nodeAt(pos) else { return .fail("No node at mark step's position") }
         let updated = Node(type: node.type, attrs: node.attrs, content: .empty, marks: mark.removeFromSet(node.marks))
         return .fromReplace(doc, pos, pos + 1, Slice(Fragment(updated), openStart: 0, openEnd: node.isLeaf ? 0 : 1))
     }
@@ -451,7 +463,7 @@ public final class AttrStep: Step {
     public init(_ pos: Int, _ attr: String, _ value: JSON) { self.pos = pos; self.attr = attr; self.value = value }
 
     public func apply(_ doc: Node) -> StepResult {
-        guard let node = doc.nodeAt(pos) else { return .fail("No node at attribute step's position") }
+        guard positionsValid(doc, pos), let node = doc.nodeAt(pos) else { return .fail("No node at attribute step's position") }
         var attrs = node.attrs
         attrs[attr] = value
         guard let updated = try? node.type.computeAttrs(attrs) else { return .fail("Invalid attribute value") }
