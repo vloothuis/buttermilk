@@ -110,3 +110,8 @@ extension JSON: CustomStringConvertible {
 
 /// Node and mark attributes.
 public typealias Attrs = [String: JSON]
+
+public extension Int {
+    /// This integer as a JSON number.
+    var json: JSON { .number(Double(self)) }
+}

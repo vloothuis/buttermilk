@@ -28,6 +28,10 @@ public struct EditorProps {
     public var handleTextInput: ((EditorViewing, _ from: Int, _ to: Int, _ text: String) -> Bool)?
     public var handlePaste: ((EditorViewing, Slice) -> Bool)?
     public var editable: ((EditorState) -> Bool)?
+    /// Called on a triple click at document position `pos`.
+    public var handleTripleClick: ((EditorViewing, _ pos: Int) -> Bool)?
+    /// Lets a plugin override the selection a mouse drag creates. Return nil for the default.
+    public var createSelectionBetween: ((EditorViewing, _ anchor: ResolvedPos, _ head: ResolvedPos) -> Selection?)?
     public init() {}
 }
 

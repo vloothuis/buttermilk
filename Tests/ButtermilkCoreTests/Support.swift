@@ -58,6 +58,4 @@ func normalize(_ j: JSON?) -> JSON? {
     }
 }
 
-extension Int {
-    var json: JSON { .number(Double(self)) }
-}
+
