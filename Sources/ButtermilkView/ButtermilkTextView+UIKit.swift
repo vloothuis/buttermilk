@@ -26,6 +26,7 @@ open class ButtermilkTextView: UITextView, EditorViewing, UITextViewDelegate {
         let container = NSTextContainer(size: CGSize(width: frame.width, height: .greatestFiniteMagnitude))
         container.widthTracksTextView = true
         layout.addTextContainer(container)
+        layout.allowsNonContiguousLayout = true
         super.init(frame: frame, textContainer: container)
         delegate = self
         smartQuotesType = .no
@@ -70,8 +71,19 @@ open class ButtermilkTextView: UITextView, EditorViewing, UITextViewDelegate {
     // MARK: Rendering
 
     private func stateChanged(_ next: EditorState, _ prev: EditorState) {
-        if next.doc !== prev.doc { renderDocument() }
+        if let change = core.pendingChange {
+            core.pendingChange = nil
+            applyChange(change)
+        }
         renderSelection()
+    }
+
+    private func applyChange(_ change: TextChange) {
+        isRendering = true
+        defer { isRendering = false }
+        textStorage.beginEditing()
+        textStorage.replaceCharacters(in: change.range, with: change.replacement)
+        textStorage.endEditing()
     }
 
     private func renderDocument() {
@@ -111,7 +123,7 @@ open class ButtermilkTextView: UITextView, EditorViewing, UITextViewDelegate {
         for f in core.someProp({ $0.createSelectionBetween }) {
             if let s = f(self, resolvedAnchor, resolvedHead) { selection = s; break }
         }
-        if selection == nil, range.length <= 1, let atom = map.atoms.first(where: { $0.offset == range.location }),
+        if selection == nil, range.length <= 1, let atom = map.atom(at: range.location),
            let node = doc.nodeAt(atom.pos), NodeSelection.isSelectable(node) {
             selection = NodeSelection.create(doc, atom.pos)
         }
@@ -163,11 +175,14 @@ open class ButtermilkTextView: UITextView, EditorViewing, UITextViewDelegate {
     override open func unmarkText() {
         guard let comp = compositionRange else { super.unmarkText(); return }
         let marked = markedTextRange.map { text(in: $0) ?? "" } ?? ""
+        let markedRange = markedTextRange.map { NSRange(location: offset(from: beginningOfDocument, to: $0.start),
+                                                         length: offset(from: $0.start, to: $0.end)) }
         isRendering = true
         super.unmarkText()
+        // UITextView keeps the committed text; drop it so the storage matches the rendering.
+        if let markedRange { textStorage.replaceCharacters(in: markedRange, with: "") }
         isRendering = false
         compositionRange = nil
-        renderDocument()
         if !marked.isEmpty { core.insertText(marked, from: comp.from, to: comp.to) } else { renderSelection() }
     }
 

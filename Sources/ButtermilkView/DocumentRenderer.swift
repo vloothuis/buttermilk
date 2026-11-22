@@ -11,10 +11,59 @@ public extension NSAttributedString.Key {
     static let buttermilkMarker = NSAttributedString.Key("ButtermilkMarker")
 }
 
+/// One rendered top-level block. Positions and offsets in `map` are relative to the block.
+struct RenderedBlock {
+    let node: Node
+    let text: NSAttributedString
+    let map: BlockMap
+}
+
 /// A rendered document: attributed text plus the position map that links it to the document.
 public struct RenderedDocument {
-    public let text: NSAttributedString
-    public let map: PositionMap
+    var blocks: [RenderedBlock]
+    public private(set) var map: PositionMap
+
+    init(blocks: [RenderedBlock]) {
+        self.blocks = blocks
+        map = PositionMap(blocks: blocks.map(\.map), sizes: blocks.map(\.node.nodeSize), lengths: blocks.map(\.text.length))
+    }
+
+    /// The full text. Views apply ``TextChange``s instead of reading this after each edit.
+    public var text: NSAttributedString {
+        let out = NSMutableAttributedString()
+        blocks.forEach { out.append($0.text) }
+        return out
+    }
+
+    public var length: Int { blocks.last.map { map.blockOffset[blocks.count - 1] + $0.text.length } ?? 0 }
+
+    func offset(ofBlock i: Int) -> Int { i < blocks.count ? map.blockOffset[i] : length }
+
+    /// Replaces blocks `range` with `new`, updating the map from there on.
+    mutating func replaceBlocks(_ range: Range<Int>, with new: [RenderedBlock]) {
+        blocks.replaceSubrange(range, with: new)
+        map.blocks.replaceSubrange(range, with: new.map(\.map))
+        map.blockPos.replaceSubrange(range, with: new.map { _ in 0 })
+        map.blockOffset.replaceSubrange(range, with: new.map { _ in 0 })
+        var i = range.lowerBound
+        var pos = i > 0 ? map.blockPos[i - 1] + blocks[i - 1].node.nodeSize : 0
+        var offset = i > 0 ? map.blockOffset[i - 1] + blocks[i - 1].text.length : 0
+        while i < blocks.count {
+            // Past the new blocks, stop once the shift is known to be zero.
+            if i >= range.lowerBound + new.count, map.blockPos[i] == pos, map.blockOffset[i] == offset { break }
+            map.blockPos[i] = pos; map.blockOffset[i] = offset
+            pos += blocks[i].node.nodeSize; offset += blocks[i].text.length
+            i += 1
+        }
+    }
+}
+
+/// The part of the rendered text that changed between two renderings.
+public struct TextChange {
+    /// Range in the old text.
+    public let range: NSRange
+    /// Text that replaces it.
+    public let replacement: NSAttributedString
 }
 
 /// Turns a document into attributed text for TextKit.
@@ -47,16 +96,44 @@ public struct DocumentRenderer {
     }
 
     public func render(_ doc: Node) -> RenderedDocument {
+        var blocks: [RenderedBlock] = []
+        doc.forEach { child, _, _ in blocks.append(renderBlock(child)) }
+        return RenderedDocument(blocks: blocks)
+    }
+
+    /// Renders `doc` again, reusing every top-level block that did not change. Nodes are
+    /// immutable and transactions keep untouched nodes, so identity tells what changed.
+    /// Returns the change to apply to text that showed `rendered` before.
+    public func update(_ rendered: inout RenderedDocument, to doc: Node) -> TextChange {
+        // Index into rendered.blocks directly: a copy would make the update below copy the array.
+        let oldCount = rendered.blocks.count, count = doc.childCount
+        var prefix = 0
+        while prefix < min(oldCount, count), rendered.blocks[prefix].node === doc.child(prefix) { prefix += 1 }
+        var suffix = 0
+        while suffix < min(oldCount, count) - prefix,
+              rendered.blocks[oldCount - 1 - suffix].node === doc.child(count - 1 - suffix) {
+            suffix += 1
+        }
+        let middle = (prefix..<(count - suffix)).map { renderBlock(doc.child($0)) }
+        let start = rendered.offset(ofBlock: prefix)
+        let removed = rendered.offset(ofBlock: oldCount - suffix) - start
+        let replacement = NSMutableAttributedString()
+        middle.forEach { replacement.append($0.text) }
+        rendered.replaceBlocks(prefix..<(oldCount - suffix), with: middle)
+        return TextChange(range: NSRange(location: start, length: removed), replacement: replacement)
+    }
+
+    func renderBlock(_ node: Node) -> RenderedBlock {
         let state = RenderState(theme: theme, imageLoader: imageLoader, linkSchemes: linkSchemes)
-        state.blocks(doc, contentStart: 0, Context())
-        return RenderedDocument(text: state.out, map: state.map)
+        state.block(node, 0, Context())
+        return RenderedBlock(node: node, text: state.out, map: state.map)
     }
 }
 
 private final class RenderState {
     let theme: Theme
     let out = NSMutableAttributedString()
-    var map = PositionMap()
+    var map = BlockMap()
 
     let imageLoader: ((String) -> PlatformImage?)?
     let linkSchemes: Set<String>

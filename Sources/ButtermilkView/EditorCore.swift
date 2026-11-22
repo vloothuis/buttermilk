@@ -8,7 +8,16 @@ import Foundation
 public final class EditorCore {
     public private(set) var state: EditorState
     public private(set) var rendered: RenderedDocument
-    public var renderer: DocumentRenderer { didSet { rendered = renderer.render(state.doc) } }
+    public var renderer: DocumentRenderer {
+        didSet {
+            let old = rendered
+            rendered = renderer.render(state.doc)
+            pendingChange = TextChange(range: NSRange(location: 0, length: old.length), replacement: rendered.text)
+            onChange?(state, state)
+        }
+    }
+    /// The text change from the last document update, for the view to apply to its storage.
+    var pendingChange: TextChange?
     /// Used by the owning view to redraw after a state change.
     var onChange: ((EditorState, EditorState) -> Void)?
     /// Called after every state change with the new and the previous state.
@@ -65,7 +74,9 @@ public final class EditorCore {
         let prev = state
         state = next
         let pluginsChanged = prev.plugins.map(\.key) != next.plugins.map(\.key)
-        if prev.doc !== next.doc { rendered = renderer.render(next.doc) }
+        if prev.doc !== next.doc {
+            pendingChange = renderer.update(&rendered, to: next.doc)
+        }
         if pluginsChanged { makePluginViews() }
         if let host { pluginViews.forEach { $0.update(host, prev) } }
         onChange?(next, prev)

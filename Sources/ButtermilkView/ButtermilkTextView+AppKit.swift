@@ -26,6 +26,7 @@ open class ButtermilkTextView: NSTextView, EditorViewing {
         let container = NSTextContainer(size: NSSize(width: frame.width, height: .greatestFiniteMagnitude))
         container.widthTracksTextView = true
         layout.addTextContainer(container)
+        layout.allowsNonContiguousLayout = true
         super.init(frame: frame, textContainer: container)
         isRichText = true
         allowsUndo = false
@@ -78,9 +79,21 @@ open class ButtermilkTextView: NSTextView, EditorViewing {
     // MARK: Rendering
 
     private func stateChanged(_ next: EditorState, _ prev: EditorState) {
-        if next.doc !== prev.doc { renderDocument() }
+        if let change = core.pendingChange {
+            core.pendingChange = nil
+            applyChange(change)
+        }
         renderSelection()
         needsDisplay = true
+    }
+
+    private func applyChange(_ change: TextChange) {
+        guard let storage = textStorage else { return }
+        isRendering = true
+        defer { isRendering = false }
+        storage.beginEditing()
+        storage.replaceCharacters(in: change.range, with: change.replacement)
+        storage.endEditing()
     }
 
     private func renderDocument() {
@@ -136,7 +149,7 @@ open class ButtermilkTextView: NSTextView, EditorViewing {
                 if let s = f(self, resolvedAnchor, resolvedHead) { selection = s; break }
             }
         }
-        if selection == nil, let atom = map.atoms.first(where: { $0.offset == range.location }), range.length <= 1,
+        if selection == nil, let atom = map.atom(at: range.location), range.length <= 1,
            let node = doc.nodeAt(atom.pos), NodeSelection.isSelectable(node) {
             selection = NodeSelection.create(doc, atom.pos)
         }
@@ -210,7 +223,6 @@ open class ButtermilkTextView: NSTextView, EditorViewing {
         if let comp = compositionRange {
             // End of composition: drop the marked text from the storage, then insert through the state.
             endMarkedText()
-            renderDocument()
             if !text.isEmpty { core.insertText(text, from: comp.from, to: comp.to) } else { renderSelection() }
             return
         }
@@ -239,7 +251,6 @@ open class ButtermilkTextView: NSTextView, EditorViewing {
         let marked = markedRange()
         let text = marked.location == NSNotFound ? "" : (string as NSString).substring(with: marked)
         endMarkedText()
-        renderDocument()
         if !text.isEmpty { core.insertText(text, from: comp.from, to: comp.to) } else { renderSelection() }
     }
 
@@ -249,7 +260,8 @@ open class ButtermilkTextView: NSTextView, EditorViewing {
     private func endMarkedText() {
         compositionRange = nil
         isUnmarking = true
-        // An empty marked string ends the composition without NSTextView committing it.
+        // An empty marked string removes the marked text, so the storage matches the rendering
+        // again, and ends the composition without NSTextView committing it.
         super.setMarkedText("", selectedRange: NSRange(location: 0, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
         isUnmarking = false
     }

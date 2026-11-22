@@ -190,3 +190,87 @@ final class RenderSafetyTests: XCTestCase {
     }
 }
 #endif
+
+#if canImport(AppKit)
+final class IncrementalRenderTests: XCTestCase {
+    let schema = BasicSchema.schema
+
+    func bigDoc(_ n: Int) throws -> Node {
+        let blocks: [JSON] = (0..<n).map { i in
+            i % 7 == 3 ? ["type": "heading", "attrs": ["level": 2], "content": [["type": "text", "text": .string("Heading \(i)")]]]
+                : ["type": "paragraph", "content": [["type": "text", "text": .string("Paragraph \(i) with some text.")]]]
+        }
+        return try schema.nodeFromJSON(["type": "doc", "content": .array(blocks)])
+    }
+
+    func assertInSync(_ view: ButtermilkTextView, file: StaticString = #filePath, line: UInt = #line) {
+        let full = view.core.renderer.render(view.state.doc)
+        XCTAssertEqual(view.string, full.text.string, file: file, line: line)
+        XCTAssertEqual(view.core.rendered.map.segments.map(\.pos), full.map.segments.map(\.pos), file: file, line: line)
+        XCTAssertEqual(view.core.rendered.map.segments.map(\.offset), full.map.segments.map(\.offset), file: file, line: line)
+    }
+
+    func testIncrementalEditsMatchFullRender() throws {
+        let view = ButtermilkTextView(state: try EditorState.create(.init(doc: try bigDoc(40))))
+        var rng = SystemRandomNumberGenerator()
+        for step in 0..<200 {
+            let size = view.state.doc.content.size
+            let pos = Int.random(in: 0...size, using: &rng)
+            view.core.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(pos))))
+            switch step % 4 {
+            case 0: view.insertText("x\(step)", replacementRange: NSRange(location: NSNotFound, length: 0))
+            case 1: view.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+            case 2: view.doCommand(by: #selector(NSResponder.deleteBackward(_:)))
+            default:
+                let a = Int.random(in: 0...size, using: &rng), b = Int.random(in: 0...size, using: &rng)
+                let d = view.state.doc
+                view.core.dispatch(view.state.tr.setSelection(TextSelection.between(d.resolve(min(a, b)), d.resolve(max(a, b)))))
+                view.core.deleteSelection()
+            }
+            assertInSync(view)
+        }
+    }
+
+    func testTypingInLargeDocumentIsFast() throws {
+        let view = ButtermilkTextView(state: try EditorState.create(.init(doc: try bigDoc(20_000))))
+        view.core.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(view.state.doc.content.size / 2))))
+        let start = Date()
+        for _ in 0..<100 { view.insertText("a", replacementRange: NSRange(location: NSNotFound, length: 0)) }
+        let perKey = Date().timeIntervalSince(start) / 100
+        #if DEBUG
+        let limit = 0.04
+        #else
+        let limit = 0.008
+        #endif
+        XCTAssertLessThan(perKey, limit, "typing took \(Int(perKey * 1000)) ms per key")
+        print("typing: \(String(format: "%.2f", perKey * 1000)) ms per key")
+    }
+}
+#endif
+
+#if canImport(AppKit)
+final class ProfileTests: XCTestCase {
+    func testProfile() throws {
+        guard ProcessInfo.processInfo.environment["BM_PROFILE"] != nil else { return }
+        let t = IncrementalRenderTests()
+        let doc = try t.bigDoc(20_000)
+        var state = try EditorState.create(.init(doc: doc))
+        state = try state.apply(state.tr.setSelection(TextSelection.near(doc.resolve(doc.content.size / 2))))
+        let r = DocumentRenderer()
+        var rendered = r.render(doc)
+        func time(_ name: String, _ f: () throws -> Void) rethrows { let s = Date(); for _ in 0..<20 { try f() }; print("PROF", name, String(format: "%.2f ms", Date().timeIntervalSince(s) * 50)) }
+        var next = state
+        try time("apply") { next = try state.apply(state.tr.insertText("a")) }
+        time("update") { var copy = rendered; _ = r.update(&copy, to: next.doc) }
+        time("mapinit") { _ = RenderedDocument(blocks: rendered.blocks) }
+        let view = ButtermilkTextView(state: state)
+        var rd = rendered
+        time("update-inplace") { _ = r.update(&rd, to: next.doc); _ = r.update(&rd, to: state.doc) }
+        let storage = view.textStorage!
+        time("storage-edit") { storage.replaceCharacters(in: NSRange(location: 1000, length: 0), with: "a") }
+        time("select") { view.setSelectedRange(NSRange(location: 1000, length: 0)) }
+        time("scroll") { view.scrollRangeToVisible(NSRange(location: 400000, length: 0)) }
+        try time("dispatch") { view.core.apply(try view.state.tr.insertText("a")) }
+    }
+}
+#endif
