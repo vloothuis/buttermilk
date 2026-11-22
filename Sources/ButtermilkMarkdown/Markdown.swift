@@ -11,6 +11,9 @@ import Markdown
 ///
 /// The schema must use the node and mark names of ``MarkdownSchema``. Markdown that has no node
 /// in the schema (raw HTML, for example) becomes plain text.
+///
+/// YAML front matter (a block between `---` lines at the very start) becomes a `front_matter`
+/// node holding the raw YAML, which is written back unchanged.
 public struct MarkdownConverter {
     public let schema: Schema
 
@@ -20,10 +23,28 @@ public struct MarkdownConverter {
 
     /// Parses Markdown into a document.
     public func parse(_ markdown: String) throws -> ButtermilkCore.Node {
-        let document = Document(parsing: markdown)
-        var blocks = try document.blockChildren.flatMap { try block($0) }
+        var body = markdown
+        var blocks: [ButtermilkCore.Node] = []
+        if schema.nodes["front_matter"] != nil, let (yaml, rest) = Self.splitFrontMatter(markdown) {
+            blocks.append(try node("front_matter", nil, yaml.isEmpty ? [] : [schema.text(yaml)]))
+            body = rest
+        }
+        let document = Document(parsing: body)
+        blocks += try document.blockChildren.flatMap { try block($0) }
         if blocks.isEmpty, let paragraph = schema.nodes["paragraph"] { blocks = [try paragraph.create()] }
         return try schema.topNodeType.createChecked(nil, Fragment.fromArray(blocks))
+    }
+
+    /// Splits `---` fenced front matter off the start of `markdown`. The closing fence may be
+    /// `---` or `...`. Returns the YAML without the fences and the remaining Markdown.
+    static func splitFrontMatter(_ markdown: String) -> (yaml: String, rest: String)? {
+        var lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)[...]
+        func trimmed(_ line: Substring) -> Substring { line.hasSuffix("\r") ? line.dropLast() : line }
+        guard let first = lines.first, trimmed(first) == "---" else { return nil }
+        lines = lines.dropFirst()
+        guard let end = lines.firstIndex(where: { trimmed($0) == "---" || trimmed($0) == "..." }) else { return nil }
+        let yaml = lines[lines.startIndex..<end].joined(separator: "\n")
+        return (yaml, lines[(end + 1)...].joined(separator: "\n"))
     }
 
     private func node(_ name: String, _ attrs: Attrs? = nil, _ content: [ButtermilkCore.Node] = []) throws -> ButtermilkCore.Node {
@@ -153,8 +174,20 @@ public struct MarkdownConverter {
     public func serialize(_ doc: ButtermilkCore.Node) -> String {
         var parts: [String] = []
         var previous: String?
-        doc.forEach { child, _, _ in
+        doc.forEach { child, _, index in
             let name = child.type.name
+            if name == "front_matter" {
+                // Front matter only works at the start; elsewhere it becomes a YAML code block.
+                if index == 0 {
+                    parts.append("---\n" + (child.textContent.isEmpty ? "" : child.textContent + "\n") + "---")
+                } else {
+                    var text = Document([CodeBlock(language: "yaml", child.textContent + "\n")]).format()
+                    while text.hasSuffix("\n") { text.removeLast() }
+                    parts.append(text)
+                }
+                previous = name
+                return
+            }
             // Two lists of the same kind in a row would parse back as one list.
             if previous == name, name == "bullet_list" || name == "ordered_list" { parts.append("<!-- -->") }
             previous = name

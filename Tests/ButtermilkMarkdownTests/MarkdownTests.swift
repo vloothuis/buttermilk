@@ -99,4 +99,33 @@ final class MarkdownSafetyTests: XCTestCase {
         let doc = try s.node("doc", nil, [s.node("heading", ["level": 99], [s.text("x")])])
         XCTAssertEqual(MarkdownConverter().serialize(doc), "###### x\n")
     }
+
+    let md = MarkdownConverter()
+
+    func testFrontMatterRoundTripsUnchanged() throws {
+        let yaml = "title: \"Hello: world\"\ntags:\n  - a\n  - b   \n# comment\n\nnested:\n    key: *ref"
+        let text = "---\n\(yaml)\n---\n\n# Body\n"
+        let doc = try md.parse(text)
+        XCTAssertEqual(doc.child(0).type.name, "front_matter")
+        XCTAssertEqual(doc.child(0).textContent, yaml)
+        XCTAssertEqual(doc.child(1).type.name, "heading")
+        XCTAssertEqual(md.serialize(doc), text)
+    }
+
+    func testFrontMatterEdgeCases() throws {
+        // Dots close front matter too; it is written back with dashes.
+        XCTAssertEqual(try md.parse("---\na: 1\n...\nText\n").child(0).textContent, "a: 1")
+        // Empty front matter and a document with only front matter.
+        let empty = try md.parse("---\n---\n")
+        XCTAssertEqual(empty.child(0).type.name, "front_matter")
+        XCTAssertEqual(md.serialize(empty), "---\n---\n")
+        // A rule not at the very start, or without a closing fence, is not front matter.
+        XCTAssertEqual(try md.parse("Text\n\n---\na: 1\n---\n").child(0).type.name, "paragraph")
+        XCTAssertNotEqual(try md.parse("---\nText\n").child(0).type.name, "front_matter")
+        // Front matter moved away from the start is written as a YAML code block.
+        let s = MarkdownSchema.schema
+        let moved = try s.node("doc", nil, [s.node("paragraph", nil, [s.text("x")]),
+                                            s.node("front_matter", nil, [s.text("a: 1")])])
+        XCTAssertEqual(md.serialize(moved), "x\n\n```yaml\na: 1\n```\n")
+    }
 }

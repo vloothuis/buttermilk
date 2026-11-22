@@ -1,6 +1,7 @@
 import ButtermilkCore
 
-/// A schema for CommonMark plus the GitHub extensions (tables, strikethrough, task lists).
+/// A schema for CommonMark plus the GitHub extensions (tables, strikethrough, task lists) and
+/// YAML front matter.
 ///
 /// It covers what Milkdown's CommonMark and GFM presets cover. Node and mark names follow the
 /// ProseMirror basic, list and table schemas, so ``ButtermilkView`` renders it as is.
@@ -10,6 +11,9 @@ public enum MarkdownSchema {
         nodes.insert(("code_block", NodeSpec(content: "text*", marks: "", group: "block",
                                              attrs: ["language": AttributeSpec(default: "", validateType: "string")],
                                              code: true, defining: true)), at: 4)
+        // The raw YAML between the `---` fences at the start of a document.
+        nodes.insert(("front_matter", NodeSpec(content: "text*", marks: "", group: "block",
+                                               code: true, defining: true)), at: 5)
         nodes = ListSchema.addListNodes(nodes, itemContent: "paragraph block*", listGroup: "block")
         if let i = nodes.firstIndex(where: { $0.0 == "list_item" }) {
             nodes[i].1.attrs["checked"] = AttributeSpec(default: .null, validateType: "boolean|null")
