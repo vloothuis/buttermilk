@@ -21,7 +21,7 @@ public enum JSON: Hashable, Sendable {
 
     public var stringValue: String? { if case .string(let s) = self { return s }; return nil }
     public var doubleValue: Double? { if case .number(let n) = self { return n }; return nil }
-    public var intValue: Int? { if case .number(let n) = self { return Int(n) }; return nil }
+    public var intValue: Int? { if case .number(let n) = self { return n.isFinite && n.rounded() == n && abs(n) < 9e15 ? Int(n) : nil }; return nil }
     public var boolValue: Bool? { if case .bool(let b) = self { return b }; return nil }
     public var arrayValue: [JSON]? { if case .array(let a) = self { return a }; return nil }
     public var objectValue: [String: JSON]? { if case .object(let o) = self { return o }; return nil }

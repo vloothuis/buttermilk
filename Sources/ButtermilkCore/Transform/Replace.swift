@@ -227,7 +227,7 @@ private final class Fitter {
     }
 
     func openFrontierNode(_ type: NodeType, _ attrs: Attrs? = nil, _ content: Fragment = .empty) {
-        frontier[depth].match = frontier[depth].match.matchType(type)!
+        frontier[depth].match = frontier[depth].match.matchType(type) ?? frontier[depth].match
         placed = addToFragment(placed, depth, Fragment(try! type.create(attrs, content)))
         frontier.append((type, type.contentMatch))
     }
@@ -314,20 +314,21 @@ func replaceRange(_ tr: Transform, _ from: Int, _ to: Int, _ slice: Slice) throw
     }
     let preferredTargetIndex = targetDepths.firstIndex(of: preferredTarget)!
 
-    var leftNodes: [Node] = []
+    // Entries can be nil when an open node is empty, as in the JS original.
+    var leftNodes: [Node?] = []
     var preferredDepth = slice.openStart
     var content = slice.content
     var i = 0
     while true {
-        let node = content.firstChild!
+        let node = content.firstChild
         leftNodes.append(node)
         if i == slice.openStart { break }
-        content = node.content
+        content = node!.content
         i += 1
     }
     var dd = preferredDepth - 1
     while dd >= 0 {
-        let leftNode = leftNodes[dd], def = definesContent(leftNode.type)
+        let leftNode = leftNodes[dd]!, def = definesContent(leftNode.type)
         if def && !leftNode.sameMarkup(rFrom.node(abs(preferredTarget) - 1)) { preferredDepth = dd }
         else if def || !leftNode.type.isTextblock { break }
         dd -= 1
@@ -337,8 +338,7 @@ func replaceRange(_ tr: Transform, _ from: Int, _ to: Int, _ slice: Slice) throw
     while j >= 0 {
         defer { j -= 1 }
         let openDepth = (j + preferredDepth + 1) % (slice.openStart + 1)
-        guard openDepth < leftNodes.count else { continue }
-        let insert = leftNodes[openDepth]
+        guard openDepth < leftNodes.count, let insert = leftNodes[openDepth] else { continue }
         for k in 0..<targetDepths.count {
             var targetDepth = targetDepths[(k + preferredTargetIndex) % targetDepths.count]
             var expand = true
