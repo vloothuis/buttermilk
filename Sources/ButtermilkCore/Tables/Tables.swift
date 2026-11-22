@@ -298,6 +298,9 @@ public enum Tables {
             case .zeroSized:
                 let pos = tr.mapping.map(tablePos)
                 _ = try? tr.delete(pos, pos + table.nodeSize)
+            case .tooLarge:
+                // Too large to repair safely; leave it as is.
+                break
             }
         }
         let first = mustAdd.firstIndex { $0 != 0 }, last = mustAdd.lastIndex { $0 != 0 }

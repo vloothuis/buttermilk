@@ -117,4 +117,16 @@ final class TableSafetyTests: XCTestCase {
         XCTAssertThrowsError(try Selection.fromJSON(doc, ["type": "cell", "anchor": 1, "head": 1]))
         XCTAssertNoThrow(try Selection.fromJSON(doc, ["type": "cell", "anchor": 2, "head": 6]))
     }
+
+    func testOversizedTableGetsEmptyMap() throws {
+        // 1001 rows of one cell spanning 1000 columns: over a million slots.
+        let row: JSON = ["type": "table_row", "content": [cell(["colspan": 1000])]]
+        let doc = try tableSchema.nodeFromJSON(["type": "doc", "content": [["type": "table",
+            "content": .array(Array(repeating: row, count: 1001))]]])
+        let map = TableMap.get(doc.child(0))
+        XCTAssertEqual(map.problems, [.tooLarge])
+        XCTAssertEqual(map.width, 0)
+        let state = try EditorState.create(.init(doc: doc, plugins: [Tables.editing()]))
+        XCTAssertFalse(Tables.fixTables(state)?.docChanged ?? false, "oversized tables are left alone")
+    }
 }

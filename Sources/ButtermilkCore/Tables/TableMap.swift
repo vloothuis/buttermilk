@@ -15,6 +15,8 @@ public enum TableProblem: Equatable {
     case overlongRowspan(pos: Int, n: Int)
     case colwidthMismatch(pos: Int, colwidth: [JSON])
     case zeroSized
+    /// The table has more slots than ``TableMap/maxSlots``; its map is empty.
+    case tooLarge
 
     public func toJSON() -> JSON {
         switch self {
@@ -23,6 +25,7 @@ public enum TableProblem: Equatable {
         case let .overlongRowspan(pos, n): return ["type": "overlong_rowspan", "pos": pos.json, "n": n.json]
         case let .colwidthMismatch(pos, colwidth): return ["type": "colwidth mismatch", "pos": pos.json, "colwidth": .array(colwidth)]
         case .zeroSized: return ["type": "zero_sized"]
+        case .tooLarge: return ["type": "too_large"]
         }
     }
 }
@@ -46,7 +49,11 @@ public final class TableMap {
 
     /// The rectangle covered by the cell at offset `pos`. The offset must point at a cell.
     public func findCell(_ pos: Int) -> TableRect {
-        guard let i = map.firstIndex(of: pos) else { preconditionFailure("No cell with offset \(pos) found") }
+        guard let i = map.firstIndex(of: pos) else {
+            // Only an oversized table (empty map) has no cells; anything else is a caller bug.
+            precondition(map.isEmpty, "No cell with offset \(pos) found")
+            return TableRect(left: 0, top: 0, right: 0, bottom: 0)
+        }
         let left = i % width, top = i / width
         var right = left + 1, bottom = top + 1
         var j = 1
@@ -58,7 +65,11 @@ public final class TableMap {
 
     /// The left column of the cell at offset `pos`.
     public func colCount(_ pos: Int) -> Int {
-        guard let i = map.firstIndex(of: pos) else { preconditionFailure("No cell with offset \(pos) found") }
+        guard let i = map.firstIndex(of: pos) else {
+            // Only an oversized table (empty map) has no cells; anything else is a caller bug.
+            precondition(map.isEmpty, "No cell with offset \(pos) found")
+            return 0
+        }
         return i % width
     }
 
@@ -125,11 +136,16 @@ public final class TableMap {
     private static let cache = NSMapTable<Node, TableMap>.weakToStrongObjects()
     private static let lock = NSLock()
 
+    /// The largest number of slots (width times height) a table map is built for.
+    public static let maxSlots = 1_000_000
+
     static func compute(_ table: Node) -> TableMap {
         precondition(table.type.tableRole == "table", "Not a table node: \(table.type.name)")
         let width = findWidth(table), height = table.childCount
         let (size, overflow) = max(width, 0).multipliedReportingOverflow(by: height)
-        precondition(!overflow && size <= 50_000_000, "Table too large")
+        if overflow || size > maxSlots {
+            return TableMap(width: 0, height: 0, map: [], problems: [.tooLarge])
+        }
         var map = [Int](repeating: 0, count: size)
         var mapPos = 0
         var problems: [TableProblem]?
